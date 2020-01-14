@@ -60,54 +60,5 @@ function hubspot_schema() {
       ],
     ],
   ];
-  // $schema['hubspot_settings'] = [
-  //   'description' => 'Settings table for hubspot api',
-  //   'fields' => [
-  //     'client_id' => [
-  //       'description' => 'Client ID from Hubspot Application.',
-  //       'type' => 'varchar',
-  //       'length' => 128,
-  //     ],
-  //     'client_secret' => [
-  //       'description' => 'Client Secret from Hubspot Application.',
-  //       'type' => 'varchar',
-  //       'length' => 128,
-  //     ],
-  //     'portal_id' => [
-  //       'description' => 'Portal ID from Hubspot.',
-  //       'type' => 'varchar',
-  //       'length' => 128,
-  //     ],
-  //   ],
-  // ];
   return $schema;
 }
-
-/**
- * Add new hubspot_settings database to store Client ID, secret and portal id.
- */
-// function hubspot_update_8101() {
-//   $database = \Drupal::database();
-//   $schema = $database->schema();
-//   $table_schema = [
-//     'description' => 'Settings table for hubspot api',
-//     'fields' => [
-//       'client_id' => [
-//         'description' => 'Client ID from Hubspot Application.',
-//         'type' => 'varchar',
-//         'length' => 128,
-//       ],
-//       'client_secret' => [
-//         'description' => 'Client Secret from Hubspot Application.',
-//         'type' => 'varchar',
-//         'length' => 128,
-//       ],
-//       'portal_id' => [
-//         'description' => 'Portal ID from Hubspot.',
-//         'type' => 'varchar',
-//         'length' => 128,
-//       ],
-//     ],
-//   ];
-//   $schema->createTable('hubspot_settings', $table_schema);
-// }
