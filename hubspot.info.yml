@@ -1,5 +1,5 @@
-name: 'HubSpot Drupal integration'
-description: 'Provides HubSpot leads API integration with Drupal. Works with Hubspots OAuth implementation'
+name: 'HubSpot Webform integration'
+description: 'Provides HubSpot leads API integration with Webform and Drupal. Works with Hubspots OAuth 2 implementation'
 core: 8.x
 type: module
 configure: hubspot.admin_settings

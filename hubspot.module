@@ -8,6 +8,7 @@
 use Drupal\Component\Serialization\Json;
 use Drupal\Core\Url;
 use GuzzleHttp\Exception\RequestException;
+use Symfony\Component\HttpFoundation\RedirectResponse;
 
 /**
  * Implements hook_help().
@@ -54,39 +55,43 @@ function hubspot_help($route_name) {
  */
 function _hubspot_default_value($id, $hubspot_guid = NULL, $webform_field = NULL) {
   if (empty($hubspot_guid)) {
-    return db_query_range("SELECT hubspot_guid FROM {hubspot} h WHERE h.id = :id", 0, 1, array(':id' => $id))->fetchField();
+    return db_query_range("SELECT hubspot_guid FROM {hubspot} h WHERE h.id = :id", 0, 1, [':id' => $id])->fetchField();
   }
   else {
-    return db_query_range("SELECT hubspot_field FROM {hubspot} h WHERE h.id = :id AND h.hubspot_guid = :guid AND h.webform_field = :webform_field", 0, 1, array(
+    return db_query_range("SELECT hubspot_field FROM {hubspot} h WHERE h.id = :id AND h.hubspot_guid = :guid AND h.webform_field = :webform_field", 0, 1, [
       ':id' => $id,
       ':guid' => $hubspot_guid,
       ':webform_field' => $webform_field,
-    ))->fetchField();
+    ])->fetchField();
   }
 }
 
 /**
  * Gets the list of forms from HubSpot via the API.
+ *
+ * Upon failure, it will attempt to reauthenticate.
  */
 function _hubspot_get_forms() {
-  $access_token = \Drupal::config('hubspot.settings')->get('hubspot_access_token');
-
+  $access_token = \Drupal::state()->get('hubspot.hubspot_access_token');
   if (empty($access_token)) {
-    return array('error' => t('This site is not connected to a HubSpot Account.'));
+    return ['error' => t('This site is not connected to a HubSpot Account.')];
   }
 
-  $api = 'https://api.hubapi.com/contacts/v1/forms';
-  $options = [
-    'query' => ['access_token' => $access_token],
-  ];
-  $url = Url::fromUri($api, $options)->toString();
+  $api = 'https://api.hubapi.com/forms/v2/forms';
+  $url = Url::fromUri($api)->toString();
   try {
-    $response = \Drupal::httpClient()->get($url);
+    $response = \Drupal::httpClient()->get($url, [
+      'headers' => ['Authorization' => 'Bearer ' . $access_token],
+    ]);
     $data = (string) $response->getBody();
     return ['value' => Json::decode($data)];
   }
   catch (RequestException $e) {
-
+    // Try to reauthenticate.
+    $reauth = Url::fromRoute('hubspot.reauth')->toString();
+    $response = new RedirectResponse($reauth);
+    $response->send();
+    return $response;
   }
 }
 
@@ -98,23 +103,23 @@ function hubspot_mail($key, &$message, $params) {
 
   switch ($key) {
     case 'http_error':
-      $message['body'][] = t('When attempting to submit the form "@form" to HubSpot, a HTTP error occurred.', array(
+      $message['body'][] = t('When attempting to submit the form "@form" to HubSpot, a HTTP error occurred.', [
         '@form' => $params['node_title'],
-      ));
+      ]);
       break;
 
     case 'hub_error':
-      $message['body'][] = t('Upon submitting the Webform "@form" to HubSpot, an error was returned.', array(
+      $message['body'][] = t('Upon submitting the Webform "@form" to HubSpot, an error was returned.', [
         '@form' => $params['node_title'],
-      ));
+      ]);
       break;
   }
 
-  $message['body'][] = t('Error message: @message', array('@message' => $params['errormsg']));
-  $message['body'][] = t('HubSpot POST URL: @url', array('@url' => $params['hubspot_url']));
-  $message['body'][] = t('To adjust the debugging settings, visit @url', array(
+  $message['body'][] = t('Error message: @message', ['@message' => $params['errormsg']]);
+  $message['body'][] = t('HubSpot POST URL: @url', ['@url' => $params['hubspot_url']]);
+  $message['body'][] = t('To adjust the debugging settings, visit @url', [
     '@url' => Url::fromRoute('hubspot.admin_settings')->toString(),
-  ));
+  ]);
 }
 
 /**

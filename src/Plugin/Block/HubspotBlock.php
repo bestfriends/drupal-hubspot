@@ -4,18 +4,16 @@ namespace Drupal\hubspot\Plugin\Block;
 
 use Drupal\Component\Serialization\Json;
 use Drupal\Core\Access\AccessResult;
+use Drupal\Core\Block\BlockBase;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Datetime\DateFormatter;
 use Drupal\Core\Link;
 use Drupal\Core\Logger\LoggerChannelFactory;
 use Drupal\Core\Plugin\ContainerFactoryPluginInterface;
 use Drupal\Core\Session\AccountInterface;
-use Drupal\Core\Block\BlockBase;
 use Drupal\Core\Url;
-use Drupal\hubspot\HubspotInterface;
 use GuzzleHttp\ClientInterface;
 use GuzzleHttp\Exception\RequestException;
-use GuzzleHttp\RequestOptions;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 
 /**
@@ -104,7 +102,8 @@ class HubspotBlock extends BlockBase implements ContainerFactoryPluginInterface 
       $container->get('logger.factory'),
       $container->get('date.formatter'),
       $container->get('serialization.json'),
-      $container->get('config.factory')
+      $container->get('config.factory'),
+      $container->get('database')
     );
   }
 
@@ -122,15 +121,14 @@ class HubspotBlock extends BlockBase implements ContainerFactoryPluginInterface 
    * {@inheritdoc}
    */
   public function build() {
-
     $leads = $this->hubspotGetRecent();
 
     // This part of the HubSpot API returns HTTP error codes on failure, with
     // no message.
     if (!empty($leads['Error']) || $leads['HTTPCode'] != 200) {
-      $output = $this->t('An error occurred when fetching the HubSpot leads data: @error', array(
+      $output = $this->t('An error occurred when fetching the HubSpot leads data: @error', [
         '@error' => !empty($leads['Error']) ? $leads['Error'] : $leads['HTTPCode'],
-      ));
+      ]);
 
       return [
         '#type' => 'markup',
@@ -146,7 +144,7 @@ class HubspotBlock extends BlockBase implements ContainerFactoryPluginInterface 
       ];
     }
 
-    $items = array();
+    $items = [];
 
     foreach ($leads['Data']['contacts'] as $lead) {
       $first_name = isset($lead['properties']['firstname']['value']) ? $lead['properties']['firstname']['value'] : NULL;
@@ -165,6 +163,9 @@ class HubspotBlock extends BlockBase implements ContainerFactoryPluginInterface 
     $build = [
       '#theme' => 'item_list',
       '#items' => $items,
+      '#cache' => [
+        'max-age' => 0,
+      ],
     ];
 
     return $build;
@@ -183,7 +184,7 @@ class HubspotBlock extends BlockBase implements ContainerFactoryPluginInterface 
    *   Returns array of recent hubspot leads activity.
    */
   public function hubspotGetRecent($n = 5) {
-    $access_token = $this->configFactory->get('hubspot_access_token');
+    $access_token = \Drupal::state()->get('hubspot.hubspot_access_token');
     $n = intval($n);
 
     if (empty($access_token)) {
@@ -194,19 +195,20 @@ class HubspotBlock extends BlockBase implements ContainerFactoryPluginInterface 
 
     $options = [
       'query' => [
-        'access_token' => $access_token,
         'count' => $n,
       ],
     ];
     $url = Url::fromUri($api, $options)->toString();
 
-    if ($this->configFactory->get('hubspot_expires_in') > REQUEST_TIME) {
-      $result = $this->httpClient->get($url);
+    if (\Drupal::state()->get('hubspot.hubspot_expires_in') > REQUEST_TIME) {
+      $result = $this->httpClient->get($url, [
+        'headers' => ['Authorization' => 'Bearer ' . $access_token],
+      ]);
     }
     else {
       $refresh = $this->hubspotOauthRefresh();
       if ($refresh) {
-        $access_token = $this->configFactory->get('hubspot_access_token');
+        $access_token = \Drupal::state()->get('hubspot.hubspot_access_token');
         $options = [
           'query' => [
             'access_token' => $access_token,
@@ -214,8 +216,9 @@ class HubspotBlock extends BlockBase implements ContainerFactoryPluginInterface 
           ],
         ];
         $url = Url::fromUri($api, $options)->toString();
-        $result = $this->httpClient->get($url);
-
+        $result = $this->httpClient->get($url, [
+          'headers' => ['Authorization' => 'Bearer ' . $access_token],
+        ]);
       }
     }
     return [
@@ -229,49 +232,34 @@ class HubspotBlock extends BlockBase implements ContainerFactoryPluginInterface 
    * Refreshes HubSpot OAuth Access Token when expired.
    */
   public function hubspotOauthRefresh() {
-
-    $refresh_token = $this->configFactory->get('hubspot_refresh_token');
-    $api = 'https://api.hubapi.com/auth/v1/refresh';
-    $string = 'refresh_token=' . $refresh_token . '&client_id=' . HubspotInterface::HUBSPOT_CLIENT_ID . '&grant_type=refresh_token';
-    $request_options = [
-      RequestOptions::HEADERS => ['Content-Type' => 'application/x-www-form-urlencoded; charset=utf-8'],
-      // @TODO encode string paramters using json::encode.
-      RequestOptions::BODY => $string,
-    ];
-    try {
-      $response = $this->httpClient->request('POST', $api, $request_options);
-
-      if ($response->getStatusCode() == '200') {
-
-        $data = $this->json->decode($response->getBody());
-        $hubspot_access_token = $data['access_token'];
-        $hubspot_refresh_token = $data['refresh_token'];
-
-        $hubspot_expires_in = $data['expires_in'];
-
-        $this->configFactory->set('hubspot_access_token', $hubspot_access_token)->save();
-        $this->configFactory->set('hubspot_refresh_token', $hubspot_refresh_token)->save();
-        $this->configFactory->set('hubspot_expires_in', ($hubspot_expires_in + REQUEST_TIME))->save();
-
-        return ['value' => $data];
-
+    global $base_url;
+    $refresh_token = \Drupal::state()->get('hubspot.hubspot_refresh_token');
+    if (!$refresh_token) {
+      drupal_set_message($this->t('Refresh token not found. Reconnect to your Hubspot account.'), 'error', FALSE);
+    }
+    else {
+      try {
+        $reauth = \Drupal::httpClient()->post('https://api.hubapi.com/oauth/v1/token', [
+          'headers' => ['Content-Type' => 'application/x-www-form-urlencoded;charset=utf-8'],
+          'form_params' => [
+            'grant_type' => 'refresh_token',
+            'client_id' => $this->configFactory->get('hubspot_client_id'),
+            'client_secret' => $this->configFactory->get('hubspot_client_secret'),
+            'redirect_uri' => $base_url . Url::fromRoute('hubspot.oauth_connect')->toString(),
+            'refresh_token' => $refresh_token,
+          ],
+        ])->getBody();
+        $data = Json::decode($reauth);
+        \Drupal::state()->set('hubspot.hubspot_access_token', $data['access_token']);
+        \Drupal::state()->set('hubspot.hubspot_refresh_token', $data['refresh_token']);
+        \Drupal::state()->set('hubspot.hubspot_expires_in', ($data['expires_in'] + REQUEST_TIME));
+        return TRUE;
+      }
+      catch (RequestException $e) {
+        watchdog_exception('Hubspot', $e);
+        return FALSE;
       }
     }
-    catch (RequestException $e) {
-      watchdog_exception('Hubspot', $e);
-    }
-
-    drupal_set_message($this->t('Refresh token failed with Error Code "%code: %status_message". Reconnect to your Hubspot
-      account.'), 'error', FALSE);
-    $this->loggerFactory->get('hubspot')->notice('Refresh token failed with Error Code "%code: %status_message". Visit the Hubspot module
-      settings page and reconnect to your Hubspot account.', [
-        '%code' => $response->getStatusCode(),
-        '%status_message' => $response['status_message'],
-      ]
-    );
-
-    return FALSE;
-
   }
 
 }
