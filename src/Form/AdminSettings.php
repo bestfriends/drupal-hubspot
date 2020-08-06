@@ -181,7 +181,7 @@ class AdminSettings extends FormBase {
       ->set('hubspot_debug_on', $form_state->getValue('hubspot_debug_on'))
       ->set('tracking_code_on', $form_state->getValue(['tracking_code_on']))
       ->save();
-    drupal_set_message($this->t('The configuration options have been saved.'));
+    $this->messenger()->addStatus($this->t('The configuration options have been saved.'));
   }
 
   /**
@@ -209,7 +209,7 @@ class AdminSettings extends FormBase {
    * Deletes Hubspot OAuth tokens.
    */
   public function hubspotOauthDisconnect(array &$form, FormStateInterface $form_state) {
-    drupal_set_message($this->t('Successfully disconnected from HubSpot.'), 'status', FALSE);
+    $this->messenger()->addStatus($this->t('Successfully disconnected from HubSpot.'), FALSE);
     \Drupal::state()->delete('hubspot.hubspot_refresh_token');
   }
 

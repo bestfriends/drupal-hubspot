@@ -68,10 +68,10 @@ class Controller extends ControllerBase {
           ],
         ])->getBody();
         $data = Json::decode($authorize);
-        drupal_set_message($this->t('Successfully authenticated with HubSpot.'), 'status', FALSE);
+        $this->messenger()->addStatus($this->t('Successfully authenticated with HubSpot.'), FALSE);
         \Drupal::state()->set('hubspot.hubspot_access_token', $data['access_token']);
         \Drupal::state()->set('hubspot.hubspot_refresh_token', $data['refresh_token']);
-        \Drupal::state()->set('hubspot.hubspot_expires_in', ($data['expires_in'] + REQUEST_TIME));
+        \Drupal::state()->set('hubspot.hubspot_expires_in', ($data['expires_in'] + \Drupal::time()->getRequestTime()));
       }
       catch (RequestException $e) {
         watchdog_exception('Hubspot', $e);
@@ -79,8 +79,8 @@ class Controller extends ControllerBase {
     }
 
     if (!empty($_GET['error']) && $_GET['error'] == 'access_denied') {
-      drupal_set_message($this->t('You denied the request for authentication with Hubspot. Please click the button again and
-      choose the AUTHORIZE option.'), 'error', FALSE);
+      $this->messenger()->addError($this->t('You denied the request for authentication with Hubspot. Please click the button again and
+      choose the AUTHORIZE option.'), FALSE);
     }
     $redirect_url = Url::fromRoute('hubspot.admin_settings')->toString();
     $response = new RedirectResponse($redirect_url);
@@ -100,7 +100,7 @@ class Controller extends ControllerBase {
     global $base_url;
     $refresh_token = \Drupal::state()->get('hubspot.hubspot_refresh_token');
     if (!$refresh_token) {
-      drupal_set_message($this->t('Refresh token not found. Reconnect to your HubSpot account.'), 'error', FALSE);
+      $this->messenger()->addError($this->t('Refresh token not found. Reconnect to your HubSpot account.'), FALSE);
     }
     else {
       try {
@@ -117,7 +117,7 @@ class Controller extends ControllerBase {
         $data = Json::decode($reauth);
         \Drupal::state()->set('hubspot.hubspot_access_token', $data['access_token']);
         \Drupal::state()->set('hubspot.hubspot_refresh_token', $data['refresh_token']);
-        \Drupal::state()->set('hubspot.hubspot_expires_in', ($data['expires_in'] + REQUEST_TIME));
+        \Drupal::state()->set('hubspot.hubspot_expires_in', ($data['expires_in'] + \Drupal::time()->getRequestTime()));
       }
       catch (RequestException $e) {
         watchdog_exception('Hubspot', $e);

@@ -154,7 +154,7 @@ class HubspotBlock extends BlockBase implements ContainerFactoryPluginInterface 
         '#markup' => Link::fromTextAndUrl($first_name . ' ' .
           $last_name, $url)->toString() . ' ' . $this->t('(@time ago)',
           [
-            '@time' => $this->dateFormatter->formatInterval(REQUEST_TIME - floor($lead['addedAt'] / 1000)),
+            '@time' => $this->dateFormatter->formatInterval(\Drupal::time()->getRequestTime() - floor($lead['addedAt'] / 1000)),
           ]
         ),
       ];
@@ -200,7 +200,7 @@ class HubspotBlock extends BlockBase implements ContainerFactoryPluginInterface 
     ];
     $url = Url::fromUri($api, $options)->toString();
 
-    if (\Drupal::state()->get('hubspot.hubspot_expires_in') > REQUEST_TIME) {
+    if (\Drupal::state()->get('hubspot.hubspot_expires_in') > \Drupal::time()->getRequestTime()) {
       $result = $this->httpClient->get($url, [
         'headers' => ['Authorization' => 'Bearer ' . $access_token],
       ]);
@@ -235,7 +235,7 @@ class HubspotBlock extends BlockBase implements ContainerFactoryPluginInterface 
     global $base_url;
     $refresh_token = \Drupal::state()->get('hubspot.hubspot_refresh_token');
     if (!$refresh_token) {
-      drupal_set_message($this->t('Refresh token not found. Reconnect to your Hubspot account.'), 'error', FALSE);
+      $this->messenger()->addError($this->t('Refresh token not found. Reconnect to your Hubspot account.'), FALSE);
     }
     else {
       try {
@@ -252,7 +252,7 @@ class HubspotBlock extends BlockBase implements ContainerFactoryPluginInterface 
         $data = Json::decode($reauth);
         \Drupal::state()->set('hubspot.hubspot_access_token', $data['access_token']);
         \Drupal::state()->set('hubspot.hubspot_refresh_token', $data['refresh_token']);
-        \Drupal::state()->set('hubspot.hubspot_expires_in', ($data['expires_in'] + REQUEST_TIME));
+        \Drupal::state()->set('hubspot.hubspot_expires_in', ($data['expires_in'] + \Drupal::time()->getRequestTime()));
         return TRUE;
       }
       catch (RequestException $e) {
