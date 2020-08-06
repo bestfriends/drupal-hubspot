@@ -320,7 +320,7 @@ class HubspotWebformHandler extends WebformHandlerBase {
 
     // Remove existing field mapping.
     if ($hubspot_id == '--donotmap--' && $original_hubspot_id != '--donotmap--' && $original_hubspot_id != NULL) {
-      $delete = $this->connection->delete('hubspot')
+      $this->connection->delete('hubspot')
         ->condition('id', $webform_id)
         ->condition('hubspot_guid', $original_hubspot_id)
         ->execute();
@@ -331,7 +331,7 @@ class HubspotWebformHandler extends WebformHandlerBase {
     if ($hubspot_id != '--donotmap--' && $hubspot_id != $original_hubspot_id && $original_hubspot_id != NULL) {
       // Reset fields array.
       $fields = [];
-      $delete = $this->connection->delete('hubspot')
+      $this->connection->delete('hubspot')
         ->condition('id', $webform_id)
         ->condition('hubspot_guid', $original_hubspot_id)
         ->execute();
@@ -349,7 +349,7 @@ class HubspotWebformHandler extends WebformHandlerBase {
 
     // Update existing field mapping.
     if ($hubspot_id == $original_hubspot_id) {
-      $delete = $this->connection->delete('hubspot')
+      $this->connection->delete('hubspot')
         ->condition('id', $webform_id)
         ->condition('hubspot_guid', $hubspot_id)
         ->execute();
