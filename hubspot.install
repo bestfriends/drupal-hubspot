@@ -6,6 +6,7 @@
  */
 
 use Drupal\Core\Url;
+use Drupal\Core\Link;
 
 /**
  * Implements hook_install().
@@ -14,9 +15,8 @@ function hubspot_install() {
   $site_mail = \Drupal::config('system.site')->get('mail');
   \Drupal::configFactory()->getEditable('hubspot.settings')->set('hubspot_debug_email', $site_mail)->save();
   \Drupal::messenger()->addStatus(t('The HubSpot module has been successfully installed. Configure it in the @link.', [
-    '@link' => \Drupal::service('link_generator')->generate(t('HubSpot integration settings'), Url::fromRoute('hubspot.admin_settings')),
+    '@link' => Link::fromTextAndUrl(t('HubSpot integration settings'), Url::fromRoute('hubspot.admin_settings')),
   ]));
-
 }
 
 /**
