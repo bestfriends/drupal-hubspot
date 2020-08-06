@@ -319,7 +319,7 @@ class HubspotWebformHandler extends WebformHandlerBase {
     }
 
     // Remove existing field mapping.
-    if ($hubspot_id == '--donotmap--' && $original_hubspot_id != '--donotmap--' && original_hubspot_id != NULL) {
+    if ($hubspot_id == '--donotmap--' && $original_hubspot_id != '--donotmap--' && $original_hubspot_id != NULL) {
       $delete = $this->connection->delete('hubspot')
         ->condition('id', $webform_id)
         ->condition('hubspot_guid', $original_hubspot_id)
