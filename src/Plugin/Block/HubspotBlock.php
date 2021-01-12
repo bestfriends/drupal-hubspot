@@ -8,7 +8,7 @@ use Drupal\Core\Block\BlockBase;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Datetime\DateFormatter;
 use Drupal\Core\Link;
-use Drupal\Core\Logger\LoggerChannelFactory;
+use Drupal\Core\Logger\LoggerChannelFactoryInterface;
 use Drupal\Core\Plugin\ContainerFactoryPluginInterface;
 use Drupal\Core\Session\AccountInterface;
 use Drupal\Core\Url;
@@ -72,7 +72,7 @@ class HubspotBlock extends BlockBase implements ContainerFactoryPluginInterface 
    *   The plugin implementation definition.
    * @param \GuzzleHttp\ClientInterface $httpClient
    *   The HTTP client used to fetch remote definitions.
-   * @param \Drupal\Core\Logger\LoggerChannelFactory $logger
+   * @param \Drupal\Core\Logger\LoggerChannelFactoryInterface $logger
    *   Defines a factory for logging channels.
    * @param \Drupal\Core\Datetime\DateFormatter $dateFormatter
    *   The date formatter service.
@@ -81,7 +81,7 @@ class HubspotBlock extends BlockBase implements ContainerFactoryPluginInterface 
    * @param \Drupal\Core\Config\ConfigFactoryInterface $config_factory
    *   The config factory service.
    */
-  public function __construct(array $configuration, $plugin_id, $plugin_definition, ClientInterface $httpClient, LoggerChannelFactory $logger, DateFormatter $dateFormatter, Json $json, ConfigFactoryInterface $config_factory) {
+  public function __construct(array $configuration, $plugin_id, $plugin_definition, ClientInterface $httpClient, LoggerChannelFactoryInterface $logger, DateFormatter $dateFormatter, Json $json, ConfigFactoryInterface $config_factory) {
     parent::__construct($configuration, $plugin_id, $plugin_definition);
     $this->httpClient = $httpClient;
     $this->loggerFactory = $logger;
