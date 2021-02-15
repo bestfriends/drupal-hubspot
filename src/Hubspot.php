@@ -265,4 +265,44 @@ class Hubspot {
     return $this->request('POST', $url, $request_options);
   }
 
+  /**
+   * Gets the most recent HubSpot leads.
+   *
+   * @param int $n
+   *   The number of leads to fetch.
+   *
+   * @return array
+   *   Returns array of recent hubspot leads activity.
+   *
+   * @throws \GuzzleHttp\Exception\GuzzleException
+   *
+   * @see http://docs.hubapi.com/wiki/Searching_Leads
+   */
+  public function hubspotGetRecent($n = 5): array {
+    $access_token = \Drupal::state()->get('hubspot.hubspot_access_token');
+    $n = intval($n);
+
+    if (empty($access_token)) {
+      return ['Error' => $this->t('This site is not connected to a HubSpot Account.')];
+    }
+
+    $api = 'https://api.hubapi.com/contacts/v1/lists/recently_updated/contacts/recent';
+
+    $options = [
+      'query' => [
+        'count' => $n,
+      ],
+    ];
+    $url = Url::fromUri($api, $options)->toString();
+
+    $result = $this->request('GET', $url);
+    $response = $result['response'];
+
+    return [
+      'Data' => $result['value'],
+      'Error' => isset($response->error) ? $response->error : '',
+      'HTTPCode' => $response->getStatusCode(),
+    ];
+  }
+
 }
