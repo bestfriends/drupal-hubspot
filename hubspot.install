@@ -69,3 +69,24 @@ function hubspot_post_update_table_to_configuration(&$sandbox) {
   }
   $database->schema()->dropTable('hubspot');
 }
+
+
+/**
+ * Flip field mapping keys and values.
+ */
+function hubspot_post_update_flip_field_mapping(&$sandbox) {
+  $webform_storage = \Drupal::entityTypeManager()->getStorage('webform');
+
+  /** @var \Drupal\webform\WebformInterface[] $webforms */
+  $webforms = $webform_storage->loadMultiple();
+  foreach ($webforms as $webform) {
+    foreach ($webform->getHandlers() as $handler) {
+      if ($handler instanceof HubspotWebformHandler) {
+        $hubspot_mapping = $handler->getSettings();
+        $hubspot_mapping['field_mapping'] = array_flip($hubspot_mapping['field_mapping']);
+        $handler->setSettings($hubspot_mapping);
+      }
+    }
+    $webform->save();
+  }
+}
