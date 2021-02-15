@@ -91,8 +91,6 @@ class HubspotWebformHandler extends WebformHandlerBase {
       '#title' => $this->t('Field Mapping'),
     ];
 
-    $options = ['--donotmap--' => 'Do Not Map'];
-
     try {
       $hubspot_forms = $this->hubspot->getHubspotForms();
     }
@@ -112,16 +110,12 @@ class HubspotWebformHandler extends WebformHandlerBase {
       '#title' => $this->t('Choose a hubspot form:'),
       '#options' => $options,
       '#default_value' => $default_hubspot_guid,
+      '#empty_option' => $this->t('Select a form'),
       '#ajax' => [
         'callback' => [$this, 'showWebformFields'],
         'event' => 'change',
         'wrapper' => 'field_mapping_list',
       ],
-    ];
-
-    $form['mapping']['original_hubspot_id'] = [
-      '#type' => 'hidden',
-      '#value' => $default_hubspot_guid,
     ];
 
     // Fieldset to contain mapping fields.
@@ -176,44 +170,42 @@ class HubspotWebformHandler extends WebformHandlerBase {
         $hubspot_guid = $default_hubspot_guid;
       }
 
-      $hubspot_fields = $hubspot_forms[$hubspot_guid] ?? [];
-      $options = ['--donotmap--' => 'Do Not Map'];
-      foreach ($hubspot_fields['formFieldGroups'] as $hubspot_field) {
-        $options[$hubspot_field['fields'][0]['name']] = $hubspot_field['fields'][0]['label'];
-      }
+      $hubspot_form = $hubspot_forms[$hubspot_guid] ?? NULL;
+      if ($hubspot_form) {
+        $components = $this->webform->getElementsInitializedAndFlattened();
+        $webform_fields_options = [
+          '--donotmap--' => 'Do Not Map',
+        ];
 
-      $components = $this->webform->getElementsInitializedAndFlattened();
-      foreach ($components as $webform_field => $value) {
-        if (!in_array($value['#type'], $exclude_elements)) {
-          if ($value['#webform_composite']) {
-            // Loop through a composite field to get all fields.
-            foreach ($value['#webform_composite_elements'] as $composite_field => $composite_value) {
-              $key = $webform_field . ':' . $composite_field;
-              $form['mapping']['field_group']['fields'][$key] = [
-                '#title' => (@$webform_field . ':' . $composite_value['#title'] ?: $key) . ' (' . $composite_value['#type'] . ')',
-                '#type' => 'select',
-                '#options' => $options,
-              ];
-              if (isset($settings['field_mapping'][$key])) {
-                $form['mapping']['field_group']['fields'][$key]['#default_value'] = $settings['field_mapping'][$key];
+        foreach ($components as $webform_field => $value) {
+          if (!in_array($value['#type'], $exclude_elements)) {
+            if ($value['#webform_composite']) {
+              // Loop through a composite field to get all fields.
+              foreach ($value['#webform_composite_elements'] as $composite_field => $composite_value) {
+                $key = $webform_field . ':' . $composite_field;
+                $webform_fields_options[$key] = (@$value['#title'] . ':' . $composite_value['#title'] ?: $key) . ' (' . $composite_value['#type'] . ')';
               }
             }
-          }
-          else {
-            // Non composite element.
-            $form['mapping']['field_group']['fields'][$webform_field] = [
-              '#title' => (@$value['#title'] ?: $webform_field) . ' (' . $value['#type'] . ')',
-              '#type' => 'select',
-              '#options' => $options,
-            ];
-            if (isset($settings['field_mapping'][$webform_field])) {
-              $form['mapping']['field_group']['fields'][$webform_field]['#default_value'] = $settings['field_mapping'][$webform_field];
+            else {
+              $webform_fields_options[$webform_field] = (@$value['#title'] ?: $webform_field) . ' (' . $value['#type'] . ')';
             }
+          }
+        }
+
+        foreach ($hubspot_form->formFieldGroups as $fieldGroup) {
+          foreach ($fieldGroup->fields as $field) {
+            $form['mapping']['field_group']['fields'][$field->name] = [
+              '#title' => $field->label . ' (' . $field->fieldType . ')',
+              '#type' => 'select',
+              '#options' => $webform_fields_options,
+            ];
+          }
+          if (isset($settings['field_mapping'][$field->name])) {
+            $form['mapping']['field_group']['fields'][$field->name] = $settings['field_mapping'][$field->name];
           }
         }
       }
     }
-
     return $form;
   }
 
@@ -321,8 +313,9 @@ class HubspotWebformHandler extends WebformHandlerBase {
 
     $webform_values = $webform_submission->getData();
     $form_values = [];
-    foreach ($field_mapping as $webform_path => $hubspot_field) {
-      if ($hubspot_field != '--donotmap--') {
+
+    foreach ($field_mapping as $hubspot_field => $webform_path) {
+      if ($webform_path != '--donotmap--') {
         if (strpos($webform_path, ':') !== FALSE) {
           // Is composite element.
           $composite = explode(':', $webform_path);

@@ -2,17 +2,18 @@
 
 namespace Drupal\hubspot;
 
-use Drupal\Component\Serialization\Json;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Logger\LoggerChannelFactoryInterface;
 use Drupal\Core\Mail\MailManager;
 use Drupal\Core\State\StateInterface;
 use Drupal\Core\Url;
 use GuzzleHttp\ClientInterface;
-use GuzzleHttp\Exception\RequestException;
 use Drupal\Core\StringTranslation\StringTranslationTrait;
-use GuzzleHttp\RequestOptions;
+use SevenShores\Hubspot\Http\Response;
 use Symfony\Component\HttpFoundation\RequestStack;
+
+use SevenShores\Hubspot\Factory as HubspotClientFactory;
+use SevenShores\Hubspot\Utils\OAuth2 as HubspotOAuthHelper;
 
 /**
  * Define a service for interacting with the HubSpot CRM.
@@ -20,6 +21,11 @@ use Symfony\Component\HttpFoundation\RequestStack;
 class Hubspot {
 
   use StringTranslationTrait;
+
+  const HUBSPOT_OAUTH2_SCOPES = [
+    'oauth',
+    'forms',
+  ];
 
   /**
    * The Drupal state service.
@@ -34,6 +40,13 @@ class Hubspot {
    * @var \GuzzleHttp\ClientInterface
    */
   protected $httpClient;
+
+  /**
+   * The hubspot api client.
+   *
+   * @var \SevenShores\Hubspot\Factory
+   */
+  protected $hubspotClient;
 
   /**
    * Stores the configuration factory.
@@ -115,30 +128,63 @@ class Hubspot {
   }
 
   /**
+   * Initialize and return the hubspot client instance.
+   *
+   * @return \SevenShores\Hubspot\Factory
+   *   Hubspot client instance.
+   */
+  public function getHubspotClient(): HubspotClientFactory {
+    if (!$this->isConfigured()) {
+      throw new \LogicException('Hubspot api has not been configured.');
+    }
+
+    if (!$this->hubspotClient) {
+      $access_token = $this->state->get('hubspot.hubspot_access_token');
+      $this->hubspotClient = HubspotClientFactory::createWithOAuth2Token($access_token);
+    }
+    return $this->hubspotClient;
+  }
+
+  /**
+   * Generate hubspot authorization URL.
+   *
+   * @return string
+   *   Hubspot authorization uri.
+   */
+  public function getAuthorizationUrl(): string {
+    return HubspotOAuthHelper::getAuthUrl(
+      $this->config->get('hubspot_client_id'),
+      Url::fromRoute('hubspot.oauth_connect', [], [
+        'absolute' => TRUE,
+      ])->toString(),
+      static::HUBSPOT_OAUTH2_SCOPES,
+    );
+  }
+
+  /**
    * Authorize site via OAuth.
    *
    * @param string $code
    *   Auth authorization code.
    *
-   * @throws \GuzzleHttp\Exception\GuzzleException
+   * @throws \SevenShores\Hubspot\Exceptions\BadRequest
    */
   public function authorize(string $code) {
-    $response = $this->request('https://api.hubapi.com/oauth/v1/token', [
-      'headers' => ['Content-Type' => 'application/x-www-form-urlencoded;charset=utf-8'],
-      'form_params' => [
-        'grant_type' => 'authorization_code',
-        'client_id' => $this->config->get('hubspot_client_id'),
-        'client_secret' => $this->config->get('hubspot_client_secret'),
-        'redirect_uri' => Url::fromRoute('hubspot.oauth_connect', [], [
-          'absolute' => TRUE,
-        ])->toString(),
-        'code' => $code,
-      ],
-    ]);
-    $data = $response['value'];
-    $this->state->set('hubspot.hubspot_access_token', $data['access_token']);
-    $this->state->set('hubspot.hubspot_refresh_token', $data['refresh_token']);
-    $this->state->set('hubspot.hubspot_expires_in', ($data['expires_in'] + $this->currentRequest->server->get('REQUEST_TIME')));
+    $client = new HubspotClientFactory([], NULL, [
+      'http_errors' => FALSE,
+    ], TRUE);
+
+    $tokens = $client->oAuth2()->getTokensByCode(
+      $this->config->get('hubspot_client_id'),
+      $this->config->get('hubspot_client_secret'),
+      Url::fromRoute('hubspot.oauth_connect', [], [
+        'absolute' => TRUE,
+      ])->toString(),
+      $code
+    );
+    $this->state->set('hubspot.hubspot_access_token', $tokens['access_token']);
+    $this->state->set('hubspot.hubspot_refresh_token', $tokens['refresh_token']);
+    $this->state->set('hubspot.hubspot_expires_in', ($tokens['expires_in'] + $this->currentRequest->server->get('REQUEST_TIME')));
   }
 
   /**
@@ -146,104 +192,18 @@ class Hubspot {
    *
    * @return array
    *   The hubspot forms.
-   *
-   * @throws \GuzzleHttp\Exception\GuzzleException
    */
   public function getHubspotForms(): array {
+
     static $hubspot_forms;
 
     if (!isset($hubspot_forms)) {
-      $api = 'https://api.hubapi.com/forms/v2/forms';
-      $url = Url::fromUri($api)->toString();
-      $response = $this->request('GET', $url);
-      if (isset($response['error'])) {
-        return [];
-      }
-      else {
-        $hubspot_forms = $response['value'] ?? [];
-      }
+      $response = $this->getHubspotClient()->forms()->all();
+
+      $hubspot_forms = $response->forms;
     }
 
     return $hubspot_forms;
-  }
-
-  /**
-   * Make a request to hubspot.
-   *
-   * This function will return an array containing the hubspot response at the
-   * index 'value'. In the event that the module is unable to make the request
-   * an array with the key 'error', and value of an error message, will be
-   * returned instead.
-   *
-   * If the hubspot bearer token is expired, an attempt will be made to renew
-   * the token.
-   *
-   * @param string $method
-   *   HTTP Request method.
-   * @param string $url
-   *   HTTP Request URL.
-   * @param array $options
-   *   Guzzle Request options.
-   *
-   * @return array
-   *   Hubspot return array.
-   *
-   * @throws \GuzzleHttp\Exception\GuzzleException
-   */
-  public function request(string $method, string $url, array $options = []): array {
-    $access_token = $this->state
-      ->get('hubspot.hubspot_access_token');
-    if (empty($access_token)) {
-      return ['error' => t('This site is not connected to a HubSpot Account.')];
-    }
-
-    $options += [
-      'headers' => ['Authorization' => 'Bearer ' . $access_token],
-    ];
-
-    try {
-      $response = $this->httpClient->request($method, $url, $options);
-    }
-    catch (RequestException $e) {
-      // We need to reauthenticate with hubspot.
-      global $base_url;
-      $refresh_token = $this->state
-        ->get('hubspot.hubspot_refresh_token');
-
-      try {
-        $reauth = $this->httpClient->post('https://api.hubapi.com/oauth/v1/token', [
-          'headers' => ['Content-Type' => 'application/x-www-form-urlencoded;charset=utf-8'],
-          'form_params' => [
-            'grant_type' => 'refresh_token',
-            'client_id' => $this->config->get('hubspot_client_id'),
-            'client_secret' => $this->config->get('hubspot_client_secret'),
-            'redirect_uri' => $base_url . Url::fromRoute('hubspot.oauth_connect')->toString(),
-            'refresh_token' => $refresh_token,
-          ],
-        ])->getBody();
-        $data = Json::decode($reauth);
-        $this->state
-          ->set('hubspot.hubspot_access_token', $data['access_token']);
-        $this->state
-          ->set('hubspot.hubspot_refresh_token', $data['refresh_token']);
-        $this->state
-          ->set('hubspot.hubspot_expires_in', ($data['expires_in'] + $this->currentRequest->server->get('REQUEST_TIME')));
-
-        $response = $this->httpClient->request($method, $url, $options);
-      }
-      catch (RequestException $e) {
-        $this->logger->error($this->t('Unable to execute request: %message', [
-          '%message' => $e->getMessage(),
-        ]));
-        return ['error' => $e->getMessage()];
-      }
-    }
-
-    $data = $response->getBody()->getContents();
-    return [
-      'value' => Json::decode($data),
-      'response' => $response,
-    ];
   }
 
   /**
@@ -255,13 +215,13 @@ class Hubspot {
    *   Hubspot submission values, keyed by hubspot form item id.
    * @param array $context
    *   Options to pass to hubspot.
+   * @param array $request_body
+   *   Base request body to allow more complicated options to be passed.
    *
-   * @return array
+   * @return \SevenShores\Hubspot\Http\Response
    *   The request response info.
-   *
-   * @throws \GuzzleHttp\Exception\GuzzleException
    */
-  public function submitHubspotForm(string $form_guid, array $form_field_values, array $context = []): array {
+  public function submitHubspotForm(string $form_guid, array $form_field_values, array $context = [], array $request_body = []): Response {
     // Convert list values into semicolon separated lists.
     array_walk($form_field_values, function (&$value) {
       if (is_array($value)) {
@@ -269,60 +229,34 @@ class Hubspot {
       }
     });
 
-    $portal_id = $this->config->get('hubspot_portal_id');
-    $api = 'https://forms.hubspot.com/uploads/form/v2/' . $portal_id . '/' . $form_guid;
-    $url = Url::fromUri($api)->toString();
-
-    $hs_context = [
-      'hutk' => $this->currentRequest->cookies->get('hubspotutk') ?? '',
-      'ipAddress' => $this->currentRequest->getClientIp(),
-      'pageName' => isset($context['pageName']) ? $context['pageName'] : '',
-      'pageUrl' => $this->currentRequest->headers->get('referer'),
-    ];
-
-    $hs_context = array_merge($hs_context, $context);
-
-    $request_options = [
-      RequestOptions::HEADERS => ['Content-Type' => 'application/x-www-form-urlencoded'],
-      RequestOptions::FORM_PARAMS => $form_field_values + [
-        'hs_context' => Json::encode($hs_context),
+    $request_body += [
+      'fields' => $form_field_values,
+      'context' => $context + [
+        'hutk' => $this->currentRequest->cookies->get('hubspotutk') ?? '',
+        'ipAddress' => $this->currentRequest->getClientIp(),
+        'pageUrl' => $this->currentRequest->headers->get('referer'),
       ],
     ];
 
-    return $this->request('POST', $url, $request_options);
+    $portal_id = $this->config->get('hubspot_portal_id');
+    return $this->getHubspotClient()->forms()->submit($portal_id, $form_guid, $request_body);
   }
 
   /**
    * Gets the most recent HubSpot leads.
    *
-   * @param int $n
+   * @param int $count
    *   The number of leads to fetch.
    *
-   * @return array
-   *   Returns array of recent hubspot leads activity.
-   *
-   * @throws \GuzzleHttp\Exception\GuzzleException
+   * @return \SevenShores\Hubspot\Http\Response
+   *   The request response info.
    *
    * @see http://docs.hubapi.com/wiki/Searching_Leads
    */
-  public function hubspotGetRecent(int $n = 5): array {
-    $api = 'https://api.hubapi.com/contacts/v1/lists/recently_updated/contacts/recent';
-
-    $options = [
-      'query' => [
-        'count' => $n,
-      ],
-    ];
-    $url = Url::fromUri($api, $options)->toString();
-
-    $result = $this->request('GET', $url);
-    $response = $result['response'];
-
-    return [
-      'Data' => $result['value'],
-      'Error' => isset($response->error) ? $response->error : '',
-      'HTTPCode' => $response->getStatusCode(),
-    ];
+  public function hubspotGetRecent(int $count = 5): Response {
+    return $this->getHubspotClient()->contacts()->recent([
+      'count' => $count,
+    ]);
   }
 
 }
