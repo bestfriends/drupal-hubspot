@@ -2,7 +2,7 @@
 
 namespace Drupal\hubspot\Plugin\WebformHandler;
 
-use Drupal\Component\Serialization\Json;
+use Drupal\Component\Utility\NestedArray;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Database\Connection;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
@@ -10,13 +10,13 @@ use Drupal\Core\Form\FormStateInterface;
 use Drupal\Core\Logger\LoggerChannelFactoryInterface;
 use Drupal\Core\Mail\MailManager;
 use Drupal\Core\Url;
+use Drupal\hubspot\Hubspot;
 use Drupal\node\NodeStorageInterface;
 use Drupal\webform\Plugin\WebformHandlerBase;
 use Drupal\webform\WebformSubmissionInterface;
 use Drupal\webform\WebformSubmissionConditionsValidatorInterface;
 use GuzzleHttp\ClientInterface;
 use GuzzleHttp\Exception\RequestException;
-use GuzzleHttp\RequestOptions;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 
 /**
@@ -46,13 +46,6 @@ class HubspotWebformHandler extends WebformHandlerBase {
    * @var \Drupal\Core\Entity\EntityStorageInterface
    */
   protected $nodeStorage;
-
-  /**
-   * The database connection.
-   *
-   * @var \Drupal\Core\Database\Connection
-   */
-  protected $connection;
 
   /**
    * Stores the configuration factory.
@@ -85,21 +78,31 @@ class HubspotWebformHandler extends WebformHandlerBase {
   /**
    * Internal reference to the hubspot forms.
    *
-   * @var array
+   * @var \Drupal\hubspot\Hubspot
    */
-  protected $hubspotForms;
+  protected $hubspot;
 
   /**
    * {@inheritdoc}
    */
-  public function __construct(array $configuration, $plugin_id, $plugin_definition, LoggerChannelFactoryInterface $logger_factory, ConfigFactoryInterface $config_factory, EntityTypeManagerInterface $entity_type_manager, WebformSubmissionConditionsValidatorInterface $conditions_validator, ClientInterface $httpClient, NodeStorageInterface $node_storage, Connection $connection, MailManager $mailManager) {
+  public function __construct(
+      array $configuration,
+      $plugin_id,
+      $plugin_definition,
+      LoggerChannelFactoryInterface $logger_factory,
+      ConfigFactoryInterface $config_factory,
+      EntityTypeManagerInterface $entity_type_manager,
+      WebformSubmissionConditionsValidatorInterface $conditions_validator,
+      ClientInterface $httpClient,
+      NodeStorageInterface $node_storage,
+      MailManager $mailManager,
+      Hubspot $hubspot
+  ) {
     parent::__construct($configuration, $plugin_id, $plugin_definition, $logger_factory, $config_factory, $entity_type_manager, $conditions_validator);
     $this->httpClient = $httpClient;
     $this->nodeStorage = $node_storage;
-    $this->connection = $connection;
-    $this->configFactory = $config_factory;
-    $this->loggerFactory = $logger_factory;
     $this->mailManager = $mailManager;
+    $this->hubspot = $hubspot;
   }
 
   /**
@@ -116,8 +119,8 @@ class HubspotWebformHandler extends WebformHandlerBase {
       $container->get('webform_submission.conditions_validator'),
       $container->get('http_client'),
       $container->get('entity.manager')->getStorage('node'),
-      $container->get('database'),
-      $container->get('plugin.manager.mail')
+      $container->get('plugin.manager.mail'),
+      $container->get('hubspot.hubspot')
     );
   }
 
@@ -133,7 +136,7 @@ class HubspotWebformHandler extends WebformHandlerBase {
    */
   public function buildConfigurationForm(array $form, FormStateInterface $form_state) {
     // First check if hubspot is connected.
-    if (!\Drupal::state()->get('hubspot.hubspot_refresh_token')) {
+    if (!$this->hubspot->isConfigured()) {
       $form['mappping']['notice'] = [
         '#type' => 'item',
         '#title' => $this->t('Notice'),
@@ -142,6 +145,8 @@ class HubspotWebformHandler extends WebformHandlerBase {
       return $form;
     }
 
+    $settings = $this->getSettings();
+    $default_hubspot_guid = $settings['form_guid'] ?? NULL;
     $this->webform = $this->getWebform();
 
     $form['mapping'] = [
@@ -151,23 +156,12 @@ class HubspotWebformHandler extends WebformHandlerBase {
 
     $options = ['--donotmap--' => 'Do Not Map'];
 
-    // Get forms from hubspot. Will reauth if needs to.
-    $this->hubspotForms = $this->getHubspotForms();
+    $hubspot_forms = $this->hubspot->getHubspotForms();
 
-    foreach ($this->hubspotForms['value'] as $hubspot_form) {
+    foreach ($hubspot_forms as $hubspot_form) {
       $options[$hubspot_form['guid']] = $hubspot_form['name'];
     }
 
-    // Check if mapping exists.
-    $query = $this->connection->select('hubspot', 'hs')
-      ->fields('hs', ['hubspot_guid', 'webform_field', 'hubspot_field'])
-      ->condition('hs.id', $this->webform->id(), '=')
-      ->execute();
-    $existing_fields = $query->fetchAll(\PDO::FETCH_ASSOC);
-    $default_hubspot_guid = NULL;
-    if (count($existing_fields) >= 1) {
-      $default_hubspot_guid = $existing_fields[0]['hubspot_guid'];
-    }
 
     // Sort $options alphabetically and retain key (guid).
     asort($options, SORT_STRING | SORT_FLAG_CASE);
@@ -208,8 +202,10 @@ class HubspotWebformHandler extends WebformHandlerBase {
       '#markup' => '',
     ];
 
+    $form_values = $form_state->getValues();
+
     // Apply default values if available.
-    if (!empty($form_state->getValues()['mapping']['hubspot_form']) || !empty($default_hubspot_guid)) {
+    if (!empty($form_values['mapping']['hubspot_form']) || !empty($default_hubspot_guid)) {
       // Generally, these elements cannot be submitted to HubSpot.
       $exclude_elements = [
         'webform_actions',
@@ -233,35 +229,39 @@ class HubspotWebformHandler extends WebformHandlerBase {
         'label',
       ];
 
-      if (!empty($form_state->getValues()['mapping']['hubspot_form'])) {
-        $hubspot_guid = $form_state->getValues()['mapping']['hubspot_form'];
+      if (!empty($form_values['mapping']['hubspot_form'])) {
+        $hubspot_guid = $form_values['mapping']['hubspot_form'];
       }
       else {
         $hubspot_guid = $default_hubspot_guid;
       }
 
-      foreach ($this->hubspotForms['value'] as $key => $val) {
+      foreach ($hubspot_forms as $key => $val) {
         if ($val['guid'] == $hubspot_guid) {
           $index = $key;
         }
       }
-      $hubspot_fields = $this->hubspotForms['value'][$index];
+      $hubspot_fields = $hubspot_forms[$index];
+      $options = ['--donotmap--' => 'Do Not Map'];
+      foreach ($hubspot_fields['formFieldGroups'] as $hubspot_field) {
+        $options[$hubspot_field['fields'][0]['name']] = $hubspot_field['fields'][0]['label'];
+      }
+
       $components = $this->webform->getElementsInitializedAndFlattened();
       foreach ($components as $webform_field => $value) {
         if (!in_array($value['#type'], $exclude_elements)) {
-          $options = ['--donotmap--' => 'Do Not Map'];
-          foreach ($hubspot_fields['formFieldGroups'] as $hubspot_field) {
-            $options[$hubspot_field['fields'][0]['name']] = $hubspot_field['fields'][0]['label'];
-          }
-
           if ($value['#webform_composite']) {
             // Loop through a composite field to get all fields.
             foreach ($value['#webform_composite_elements'] as $composite_field => $composite_value) {
-              $form['mapping']['field_group']['fields'][$webform_field . '.' . $composite_field] = [
-                '#title' => (@$webform_field . '.' . $composite_value['#title'] ?: $webform_field . '.' . $composite_field) . ' (' . $composite_value['#type'] . ')',
+              $key = $webform_field . ':' . $composite_field;
+              $form['mapping']['field_group']['fields'][$key] = [
+                '#title' => (@$webform_field . ':' . $composite_value['#title'] ?: $key) . ' (' . $composite_value['#type'] . ')',
                 '#type' => 'select',
                 '#options' => $options,
               ];
+              if (isset($settings['field_mapping'][$key])) {
+                $form['mapping']['field_group']['fields'][$key]['#default_value'] = $settings['field_mapping'][$key];
+              }
             }
           }
           else {
@@ -271,11 +271,9 @@ class HubspotWebformHandler extends WebformHandlerBase {
               '#type' => 'select',
               '#options' => $options,
             ];
-          }
-
-          // Set default value of existing mappings.
-          foreach ($existing_fields as $hs_field) {
-            $form['mapping']['field_group']['fields'][$hs_field['webform_field']]['#default_value'] = $hs_field['hubspot_field'];
+            if (isset($settings['field_mapping'][$webform_field])) {
+              $form['mapping']['field_group']['fields'][$webform_field]['#default_value'] = $settings['field_mapping'][$webform_field];
+            }
           }
         }
       }
@@ -295,127 +293,25 @@ class HubspotWebformHandler extends WebformHandlerBase {
    * {@inheritdoc}
    */
   public function submitConfigurationForm(array &$form, FormStateInterface $form_state) {
-    if (!\Drupal::state()->get('hubspot.hubspot_refresh_token')) {
+    if (!$this->hubspot->isConfigured()) {
       return FALSE;
     }
-    $webform_id = $this->webform->id();
-    $original_hubspot_id = $form_state->getValues()['mapping']['original_hubspot_id'];
+
     $hubspot_id = $form_state->getValues()['mapping']['hubspot_form'];
     $fields = $form_state->getValues()['mapping']['field_group']['fields'];
 
+    $settings = [];
+
     // Add new field mapping.
-    if ($hubspot_id != '--donotmap--' && $hubspot_id != $original_hubspot_id) {
-      foreach ($fields as $webform_field => $hubspot_field) {
-        $fields = [
-          'id' => $webform_id,
-          'hubspot_guid' => $hubspot_id,
-          'webform_field' => $webform_field,
-          'hubspot_field' => $hubspot_field,
-        ];
-        $this->connection->insert('hubspot')->fields($fields)->execute();
-      }
+    if ($hubspot_id != '--donotmap--') {
+      $settings['form_guid'] = $hubspot_id;
+      $settings['field_mapping'] = array_filter($fields, function ($hubspot_field) {
+        return $hubspot_field !== '--donotmap--';
+      });
       drupal_set_message($this->t('Saved new field mapping.'));
     }
 
-    // Remove existing field mapping.
-    if ($hubspot_id == '--donotmap--' && $original_hubspot_id != '--donotmap--' && $original_hubspot_id != NULL) {
-      $this->connection->delete('hubspot')
-        ->condition('id', $webform_id)
-        ->condition('hubspot_guid', $original_hubspot_id)
-        ->execute();
-      drupal_set_message($this->t('Removed existing field mapping.'));
-    }
-
-    // Completely change hubspot forms and insert new field mapping.
-    if ($hubspot_id != '--donotmap--' && $hubspot_id != $original_hubspot_id && $original_hubspot_id != NULL) {
-      // Reset fields array.
-      $fields = [];
-      $this->connection->delete('hubspot')
-        ->condition('id', $webform_id)
-        ->condition('hubspot_guid', $original_hubspot_id)
-        ->execute();
-      foreach ($fields as $webform_field => $hubspot_field) {
-        $fields = [
-          'id' => $webform_id,
-          'hubspot_guid' => $hubspot_id,
-          'webform_field' => $webform_field,
-          'hubspot_field' => $hubspot_field,
-        ];
-        $this->connection->insert('hubspot')->fields($fields)->execute();
-      }
-      drupal_set_message($this->t('Saved new field mapping.'));
-    }
-
-    // Update existing field mapping.
-    if ($hubspot_id == $original_hubspot_id) {
-      $this->connection->delete('hubspot')
-        ->condition('id', $webform_id)
-        ->condition('hubspot_guid', $hubspot_id)
-        ->execute();
-      foreach ($fields as $webform_field => $hubspot_field) {
-        $fields = [
-          'id' => $webform_id,
-          'hubspot_guid' => $hubspot_id,
-          'webform_field' => $webform_field,
-          'hubspot_field' => $hubspot_field,
-        ];
-        $this->connection->insert('hubspot')->fields($fields)->execute();
-      }
-      drupal_set_message($this->t('Updated field mapping.'));
-    }
-  }
-
-  /**
-   * Get hubspot forms and fields from their API.
-   */
-  public function getHubspotForms() {
-    $access_token = \Drupal::state()->get('hubspot.hubspot_access_token');
-    if (empty($access_token)) {
-      return ['error' => t('This site is not connected to a HubSpot Account.')];
-    }
-
-    $api = 'https://api.hubapi.com/forms/v2/forms';
-    $url = Url::fromUri($api)->toString();
-    try {
-      $response = \Drupal::httpClient()->get($url, [
-        'headers' => ['Authorization' => 'Bearer ' . $access_token],
-      ]);
-      $data = (string) $response->getBody();
-      return ['value' => Json::decode($data)];
-    }
-    catch (RequestException $e) {
-      // We need to reauthenticate with hubspot.
-      global $base_url;
-      $refresh_token = \Drupal::state()->get('hubspot.hubspot_refresh_token');
-
-      try {
-        $this->configFactory = $this->configFactory->getEditable('hubspot.settings');
-        $reauth = \Drupal::httpClient()->post('https://api.hubapi.com/oauth/v1/token', [
-          'headers' => ['Content-Type' => 'application/x-www-form-urlencoded;charset=utf-8'],
-          'form_params' => [
-            'grant_type' => 'refresh_token',
-            'client_id' => $this->configFactory->get('hubspot_client_id'),
-            'client_secret' => $this->configFactory->get('hubspot_client_secret'),
-            'redirect_uri' => $base_url . Url::fromRoute('hubspot.oauth_connect')->toString(),
-            'refresh_token' => $refresh_token,
-          ],
-        ])->getBody();
-        $data = Json::decode($reauth);
-        \Drupal::state()->set('hubspot.hubspot_access_token', $data['access_token']);
-        \Drupal::state()->set('hubspot.hubspot_refresh_token', $data['refresh_token']);
-        \Drupal::state()->set('hubspot.hubspot_expires_in', ($data['expires_in'] + REQUEST_TIME));
-
-        $response = \Drupal::httpClient()->get($url, [
-          'headers' => ['Authorization' => 'Bearer ' . $data['access_token']],
-        ]);
-        $data = (string) $response->getBody();
-        return ['value' => Json::decode($data)];
-
-      }
-      catch (RequestException $e) {
-        watchdog_exception('Hubspot', $e);
-      }
-    }
+    $this->setSettings($settings);
   }
 
   /**
@@ -424,6 +320,29 @@ class HubspotWebformHandler extends WebformHandlerBase {
   public function postSave(WebformSubmissionInterface $webform_submission, $update = TRUE) {
     $operation = ($update) ? 'update' : 'insert';
     $this->remotePost($operation, $webform_submission);
+  }
+
+  /**
+   * Get hubspot settings.
+   *
+   * @return array
+   *   An associative array containing hubspot configuration values.
+   */
+  public function getSettings() {
+    $configuration = $this->getConfiguration();
+    return $configuration['settings'] ?? [];
+  }
+
+  /**
+   * Set hubspot settings.
+   *
+   * @param array $settings
+   *   An associative array containing hubspot configuration values.
+   */
+  public function setSettings(array $settings) {
+    $configuration = $this->getConfiguration();
+    $configuration['settings'] = $settings;
+    $this->setConfiguration($configuration);
   }
 
   /**
@@ -437,12 +356,6 @@ class HubspotWebformHandler extends WebformHandlerBase {
    */
   protected function remotePost($operation, WebformSubmissionInterface $webform_submission) {
     // Get the hubspot config settings.
-    $this->configFactory = $this->configFactory->getEditable('hubspot.settings');
-    if (empty($this->configFactory->get('hubspot_portal_id'))) {
-      // No portal id. Probably not connected to hubspot.
-      $this->loggerFactory->get('HubSpot')->notice('Webform not sent to hubspot because portal ID is empty');
-      return FALSE;
-    }
     $request_post_data = $this->getPostData($operation, $webform_submission);
     $entity_type = $request_post_data['entity_type'];
     if ($entity_type == 'node') {
@@ -459,92 +372,67 @@ class HubspotWebformHandler extends WebformHandlerBase {
       $form_title = $this->getWebform()->get('title');
       $page_url = Url::fromUserInput('/form/' . $request_post_data['webform_id'], ['absolute' => TRUE])->toString();
     }
-    $form_guid = $this->connection->select('hubspot', 'h')
-      ->fields('h', ['hubspot_guid'])
-      ->condition('id', $request_post_data['webform_id'])
-      ->range(0, 1)
-      ->execute()->fetchField();
+    $settings = $this->getSettings();
+    $form_guid = $settings['form_guid'];
+    $field_mapping = $settings['field_mapping'];
 
-    $portal_id = $this->configFactory->get('hubspot_portal_id');
-    $api = 'https://forms.hubspot.com/uploads/form/v2/' . $portal_id . '/' . $form_guid;
-    $url = Url::fromUri($api)->toString();
-    $cookie = \Drupal::request()->cookies->get('hubspotutk');
-
-    try {
-      $hs_context = [
-        'hutk' => isset($cookie) ? $cookie : '',
-        'ipAddress' => \Drupal::request()->getClientIp(),
-        'pageName' => $form_title,
-        'pageUrl' => $page_url,
-      ];
-
-      $field_values = $webform_submission->getData();
-      $columns = $this->connection->select('hubspot', 'h')
-        ->fields('h', ['hubspot_field', 'webform_field'])
-        ->condition('hubspot_guid', $form_guid)
-        ->condition('id', $request_post_data['webform_id'])
-        ->execute()->fetchAllKeyed();
-      $fields = [];
-      foreach ($columns as $key => $val) {
-        if ($key != '--donotmap--') {
-          if (strpos($val, '.') !== FALSE) {
-            // Is composite element.
-            $composite = explode('.', $val);
-            $composite_value = $field_values[$composite[0]][$composite[1]];
-            if (is_array($composite_value)) {
-              // Multivalue fields like checkboxes are semi-colon seperated.
-              array_push($fields, $key . '=' . implode(';', $composite_value));
-            }
-            else {
-              array_push($fields, $key . '=' . $composite_value);
-            }
-          }
-          else {
-            // Not a composite element.
-            if (is_array($field_values[$val])) {
-              // Multivalue fields like checkboxes are semi-colon seperated.
-              array_push($fields, $key . '=' . implode(';', $field_values[$val]));
-            }
-            else {
-              array_push($fields, $key . '=' . $field_values[$val]);
-            }
-          }
+    $webform_values = $webform_submission->getData();
+    $form_values = [];
+    foreach ($field_mapping as $webform_path => $hubspot_field) {
+      if ($hubspot_field != '--donotmap--') {
+        if (strpos($webform_path, ':') !== FALSE) {
+          // Is composite element.
+          $composite = explode(':', $webform_path);
+          $composite_value = NestedArray::getValue($webform_values, $composite);
+          $form_values[$hubspot_field] = $composite_value;
+        }
+        else {
+          // Not a composite element.
+          $form_values[$hubspot_field] = $webform_values[$webform_path];
         }
       }
-      $fields = implode('&', $fields);
-      $string = 'hs_context=' . Json::encode($hs_context) . '&' . $fields;
-      $request_options = [
-        RequestOptions::HEADERS => ['Content-Type' => 'application/x-www-form-urlencoded'],
-        RequestOptions::BODY => $string,
-      ];
-      $response = $this->httpClient->request('POST', $url, $request_options);
+    }
+
+    try {
+      $hubspot_response = $this->hubspot->submitHubspotForm($form_guid, $form_values, $page_url);
+      $response = $hubspot_response['response'] ?? NULL;
 
       // Debugging information.
+      $config = $this->configFactory->get('hubspot.settings');
       $hubspot_url = 'https://app.hubspot.com';
-      $to = $this->configFactory->get('hubspot_debug_email');
+      $to = $config->get('hubspot_debug_email');
       $default_language = \Drupal::languageManager()->getDefaultLanguage()->getId();
-      $from = $this->configFactory->get('site_mail');
-      $data = (string) $response->getBody();
+      $from = $config->get('site_mail');
 
-      if ($response->getStatusCode() == '200' || $response->getStatusCode() == '204') {
-        $this->loggerFactory->get('HubSpot')->notice('Webform "@form" results succesfully submitted to HubSpot.', [
-          '@form' => $form_title,
-        ]);
+      if ($response) {
+        $data = (string) $response->getBody();
+
+        if ($response->getStatusCode() == '200' || $response->getStatusCode() == '204') {
+          $this->loggerFactory->get('HubSpot')->notice('Webform "@form" results succesfully submitted to HubSpot.', [
+            '@form' => $form_title,
+          ]);
+        }
+        else {
+          $this->loggerFactory->get('HubSpot')->notice('HTTP notice when submitting HubSpot data from Webform "@form". @code: <pre>@msg</pre>', [
+            '@form' => $form_title,
+            '@code' => $response->getStatusCode(),
+            '@msg' => $response->getBody()->getContents(),
+          ]);
+        }
+
+        if ($config->get('hubspot_debug_on')) {
+          $this->mailManager->mail('hubspot', 'hub_error', $to, $default_language, [
+            'errormsg' => $data,
+            'hubspot_url' => $hubspot_url,
+            'node_title' => $form_title,
+          ], $from);
+        }
       }
       else {
-        $this->loggerFactory->get('HubSpot')->notice('HTTP notice when submitting HubSpot data from Webform "@form". @code: <pre>@msg</pre>', [
+        $this->loggerFactory->get('HubSpot')->notice('HTTP error when submitting HubSpot data from Webform "@form": <pre>@msg</pre>', [
           '@form' => $form_title,
-          '@code' => $response->getStatusCode(),
-          '@msg' => $response->getBody()->getContents(),
+          '@msg' => $hubspot_response['error'],
         ]);
-      }
-
-      if ($this->configFactory->get('hubspot_debug_on')) {
-        $this->mailManager->mail('hubspot', 'hub_error', $to, $default_language, [
-          'errormsg' => $data,
-          'hubspot_url' => $hubspot_url,
-          'node_title' => $form_title,
-        ], $from);
       }
     }
     catch (RequestException $e) {

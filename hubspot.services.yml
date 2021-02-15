@@ -1,0 +1,10 @@
+services:
+  hubspot.hubspot:
+    class: Drupal\hubspot\Hubspot
+    arguments:
+      - '@state'
+      - '@logger.factory'
+      - '@config.factory'
+      - '@http_client'
+      - '@plugin.manager.mail'
+      - '@request_stack'
