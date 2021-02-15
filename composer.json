@@ -1,0 +1,14 @@
+{
+    "name": "drupal/hubspot",
+    "description": "Drupal Hubspot Integration",
+    "type": "drupal-module",
+    "authors": [
+        {
+            "name": "Rich Gerdes",
+            "email": "rich@richgerdes.com"
+        }
+    ],
+    "require": {
+        "hubspot/hubspot-php": "^3.0"
+    }
+}
