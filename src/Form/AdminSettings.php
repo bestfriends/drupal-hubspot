@@ -2,12 +2,9 @@
 
 namespace Drupal\hubspot\Form;
 
-use Drupal\Core\Config\ConfigFactoryInterface;
-use Drupal\Core\Database\Connection;
-use Drupal\Core\Form\FormBase;
+use Drupal\Core\Form\ConfigFormBase;
 use Drupal\Core\Form\FormStateInterface;
 use Drupal\Core\Url;
-use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpFoundation\RedirectResponse;
 
 /**
@@ -15,51 +12,36 @@ use Symfony\Component\HttpFoundation\RedirectResponse;
  *
  * @package Drupal\hubspot\Form
  */
-class AdminSettings extends FormBase {
+class AdminSettings extends ConfigFormBase {
 
   /**
-   * The database connection.
+   * Config settings.
    *
-   * @var \Drupal\Core\Database\Connection
+   * @var string
    */
-  protected $connection;
-
-  /**
-   * Stores the configuration factory.
-   *
-   * @var \Drupal\Core\Config\ConfigFactoryInterface
-   */
-  protected $configFactory;
-
-  /**
-   * AdminSettings constructor.
-   */
-  public function __construct(Connection $connection, ConfigFactoryInterface $config_factory) {
-    $this->connection = $connection;
-    $this->configFactory = $config_factory->getEditable('hubspot.settings');
-  }
+  const SETTINGS = 'hubspot.settings';
 
   /**
    * {@inheritdoc}
    */
-  public static function create(ContainerInterface $container) {
-    return new static(
-      $container->get('database'),
-      $container->get('config.factory')
-    );
-  }
-
-  /**
-   * {@inheritdoc}
-   */
-  public function getFormId() {
+  public function getFormId(): string {
     return 'hubspot_admin_settings';
   }
 
   /**
    * {@inheritdoc}
    */
-  public function buildForm(array $form, FormStateInterface $form_state) {
+  protected function getEditableConfigNames(): array {
+    return [
+      static::SETTINGS,
+    ];
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public function buildForm(array $form, FormStateInterface $form_state): array {
+    $config = $this->config(static::SETTINGS);
     $form = [];
 
     $form['settings'] = [
@@ -72,13 +54,14 @@ class AdminSettings extends FormBase {
       '#title' => $this->t('HubSpot Portal ID'),
       '#type' => 'textfield',
       '#required' => TRUE,
-      '#default_value' => $this->configFactory->get('hubspot_portal_id'),
-      '#description' => $this->t('Enter the HubSpot Portal ID for this site. <a href="@url" target="_blank">How do I find my portal ID?</a>.', [
+      '#default_value' => $config->get('hubspot_portal_id'),
+      '#description' => $this->t('Enter the HubSpot Portal ID for this site. <a href=":url" target="_blank">How do I find my portal ID?</a>.', [
         '@url' => 'https://knowledge.hubspot.com/articles/kcs_article/account/where-can-i-find-my-hub-id',
       ]),
     ];
 
-    if ($this->configFactory->get('hubspot_portal_id')) {
+    if ($config
+      ->get('hubspot_portal_id')) {
       $form['settings']['hubspot_authentication'] = [
         '#value' => $this->t('Connect HubSpot Account'),
         '#type' => 'submit',
@@ -107,7 +90,8 @@ class AdminSettings extends FormBase {
       '#title' => $this->t('HubSpot Client ID'),
       '#type' => 'textfield',
       '#required' => TRUE,
-      '#default_value' => $this->configFactory->get('hubspot_client_id'),
+      '#default_value' => $config
+        ->get('hubspot_client_id'),
       '#description' => $this->t('Enter the HubSpot application Client ID.
         <a href="https://developers.hubspot.com/docs/faq/how-do-i-create-an-app-in-hubspot" target="_blank">How do I find my Client ID?</a>'),
     ];
@@ -116,7 +100,8 @@ class AdminSettings extends FormBase {
       '#title' => $this->t('HubSpot Client Secret'),
       '#type' => 'textfield',
       '#required' => TRUE,
-      '#default_value' => $this->configFactory->get('hubspot_client_secret'),
+      '#default_value' => $config
+        ->get('hubspot_client_secret'),
       '#description' => $this->t('Enter the HubSpot application Client Secret.
       <a href="https://developers.hubspot.com/docs/faq/how-do-i-create-an-app-in-hubspot" target="_blank">How do I find my Client Secret?</a>'),
     ];
@@ -124,7 +109,8 @@ class AdminSettings extends FormBase {
     $form['settings']['app_settings']['hubspot_scope'] = [
       '#title' => $this->t('HubSpot Scope'),
       '#type' => 'textfield',
-      '#default_value' => $this->configFactory->get('hubspot_scope'),
+      '#default_value' => $config
+        ->get('hubspot_scope'),
       '#description' => $this->t('Enter the scopes required by your app. Click
       <a href="https://developers.hubspot.com/docs/methods/oauth2/initiate-oauth-integration#scopes" target="_blank">here</a>
       to see how to see what scopes are available and how to format them. For example, <em>contacts forms</em> will give you
@@ -140,7 +126,8 @@ class AdminSettings extends FormBase {
     $form['settings']['tracking']['tracking_code_on'] = [
       '#title' => $this->t('Enable Tracking Code'),
       '#type' => 'checkbox',
-      '#default_value' => $this->configFactory->get('tracking_code_on'),
+      '#default_value' => $config
+        ->get('tracking_code_on'),
       '#description' => $this->t('If Tracking code is enabled, Javascript
       tracking will be inserted in all/specified pages of the site as configured
        in HubSpot account.'),
@@ -155,7 +142,8 @@ class AdminSettings extends FormBase {
     $form['settings']['debugging']['hubspot_debug_on'] = [
       '#title' => $this->t('Debugging enabled'),
       '#type' => 'checkbox',
-      '#default_value' => $this->configFactory->get('hubspot_debug_on'),
+      '#default_value' => $config
+        ->get('hubspot_debug_on'),
       '#description' => $this->t('If debugging is enabled, HubSpot errors will be emailed to the address below. Otherwise, they
       will be logged to the regular Drupal error log.'),
     ];
@@ -163,7 +151,8 @@ class AdminSettings extends FormBase {
     $form['settings']['debugging']['hubspot_debug_email'] = [
       '#title' => $this->t('Debugging email'),
       '#type' => 'email',
-      '#default_value' => $this->configFactory->get('hubspot_debug_email'),
+      '#default_value' => $config
+        ->get('hubspot_debug_email'),
       '#description' => $this->t('Email error reports to this address if debugging is enabled.'),
     ];
 
@@ -176,10 +165,12 @@ class AdminSettings extends FormBase {
   }
 
   /**
-   * Submit handler of admin config form.
+   * {@inheritDoc}
    */
   public function submitForm(array &$form, FormStateInterface $form_state) {
-    $this->configFactory->set('hubspot_portal_id', $form_state->getValue('hubspot_portal_id'))
+
+    $this->configFactory->getEditable(static::SETTINGS)
+      ->set('hubspot_portal_id', $form_state->getValue('hubspot_portal_id'))
       ->set('hubspot_client_id', $form_state->getValue('hubspot_client_id'))
       ->set('hubspot_client_secret', $form_state->getValue('hubspot_client_secret'))
       ->set('hubspot_scope', $form_state->getValue('hubspot_scope'))
@@ -192,14 +183,25 @@ class AdminSettings extends FormBase {
 
   /**
    * Form submission handler for hubspot_admin_settings().
+   *
+   * @param array $form
+   *   Active form build.
+   * @param \Drupal\Core\Form\FormStateInterface $form_state
+   *   Active form state.
+   *
+   * @return \Symfony\Component\HttpFoundation\RedirectResponse
+   *   Ajax response.
    */
-  public function hubspotOauthSubmitForm(array &$form, FormStateInterface $form_state) {
+  public function hubspotOauthSubmitForm(array &$form, FormStateInterface $form_state): RedirectResponse {
+    $config = $this->config(static::SETTINGS);
     global $base_url;
     $options = [
       'query' => [
-        'client_id' => $this->configFactory->get('hubspot_client_id'),
+        'client_id' => $config
+          ->get('hubspot_client_id'),
         'redirect_uri' => $base_url . Url::fromRoute('hubspot.oauth_connect')->toString(),
-        'scope' => $this->configFactory->get('hubspot_scope'),
+        'scope' => $config
+          ->get('hubspot_scope'),
       ],
     ];
     $redirect_url = Url::fromUri('https://app.hubspot.com/oauth/authorize', $options)->toString();
@@ -210,9 +212,12 @@ class AdminSettings extends FormBase {
   }
 
   /**
-   * Form submit handler.
-   *
    * Deletes Hubspot OAuth tokens.
+   *
+   * @param array $form
+   *   Active form build.
+   * @param \Drupal\Core\Form\FormStateInterface $form_state
+   *   Active form state.
    */
   public function hubspotOauthDisconnect(array &$form, FormStateInterface $form_state) {
     $this->messenger()->addStatus($this->t('Successfully disconnected from HubSpot.'), FALSE);

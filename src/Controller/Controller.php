@@ -2,38 +2,54 @@
 
 namespace Drupal\hubspot\Controller;
 
-use Drupal\Component\Serialization\Json;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Controller\ControllerBase;
-use Drupal\Core\Database\Connection;
-use Drupal\Core\Url;
+use Drupal\hubspot\Hubspot;
+use GuzzleHttp\Exception\RequestException;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpFoundation\RedirectResponse;
+use Symfony\Component\HttpFoundation\RequestStack;
 
 /**
  * Default controller for the hubspot module.
  */
 class Controller extends ControllerBase {
-  /**
-   * The database connection.
-   *
-   * @var \Drupal\Core\Database\Connection
-   */
-  protected $connection;
 
   /**
-   * Stores the configuration factory.
+   * Hubspot configuration.
    *
-   * @var \Drupal\Core\Config\ConfigFactoryInterface
+   * @var \Drupal\Core\Config\Config
    */
-  protected $configFactory;
+  protected $config;
+
+  /**
+   * The current request.
+   *
+   * @var \Symfony\Component\HttpFoundation\Request
+   */
+  protected $request;
+
+  /**
+   * The hubspot api client service.
+   *
+   * @var \Drupal\hubspot\Hubspot
+   */
+  protected $hubspot;
 
   /**
    * Controller constructor.
+   *
+   * @param \Drupal\Core\Config\ConfigFactoryInterface $config_factory
+   *   The Drupal config factory.
+   * @param \Symfony\Component\HttpFoundation\RequestStack $request_stack
+   *   The request stack.
+   * @param \Drupal\hubspot\Hubspot $hubspot
+   *   The hubspot api client service.
    */
-  public function __construct(Connection $connection, ConfigFactoryInterface $config_factory) {
-    $this->connection = $connection;
-    $this->configFactory = $config_factory->getEditable('hubspot.settings');
+  public function __construct(ConfigFactoryInterface $config_factory, RequestStack $request_stack, Hubspot $hubspot) {
+    $this->config = $config_factory->getEditable('hubspot.settings');
+    $this->request = $request_stack->getCurrentRequest();
+    $this->hubspot = $hubspot;
   }
 
   /**
@@ -41,8 +57,9 @@ class Controller extends ControllerBase {
    */
   public static function create(ContainerInterface $container) {
     return new static(
-      $container->get('database'),
-      $container->get('config.factory')
+      $container->get('config.factory'),
+      $container->get('request_stack'),
+      $container->get('hubspot.hubspot')
     );
   }
 
@@ -52,82 +69,26 @@ class Controller extends ControllerBase {
    * @return \Symfony\Component\HttpFoundation\RedirectResponse
    *   Returns Hubspot Connection Response(api key values like access_token,
    *   refresh token, expire_in).
+   *
+   * @throws \GuzzleHttp\Exception\GuzzleException
    */
-  public function hubspotOauthConnect() {
-    if (!empty($_GET['code'])) {
-      global $base_url;
+  public function hubspotOauthConnect(): RedirectResponse {
+    $code = $this->request->get('code');
+    if ($code) {
       try {
-        $authorize = \Drupal::httpClient()->post('https://api.hubapi.com/oauth/v1/token', [
-          'headers' => ['Content-Type' => 'application/x-www-form-urlencoded;charset=utf-8'],
-          'form_params' => [
-            'grant_type' => 'authorization_code',
-            'client_id' => $this->configFactory->get('hubspot_client_id'),
-            'client_secret' => $this->configFactory->get('hubspot_client_secret'),
-            'redirect_uri' => $base_url . Url::fromRoute('hubspot.oauth_connect')->toString(),
-            'code' => $_GET['code'],
-          ],
-        ])->getBody();
-        $data = Json::decode($authorize);
+        $this->hubspot->authorize($code);
         $this->messenger()->addStatus($this->t('Successfully authenticated with HubSpot.'), FALSE);
-        \Drupal::state()->set('hubspot.hubspot_access_token', $data['access_token']);
-        \Drupal::state()->set('hubspot.hubspot_refresh_token', $data['refresh_token']);
-        \Drupal::state()->set('hubspot.hubspot_expires_in', ($data['expires_in'] + \Drupal::time()->getRequestTime()));
       }
       catch (RequestException $e) {
         watchdog_exception('Hubspot', $e);
       }
     }
-
-    if (!empty($_GET['error']) && $_GET['error'] == 'access_denied') {
+    if (($error = $this->request->get('error')) && $error == 'access_denied') {
       $this->messenger()->addError($this->t('You denied the request for authentication with Hubspot. Please click the button again and
       choose the AUTHORIZE option.'), FALSE);
     }
-    $redirect_url = Url::fromRoute('hubspot.admin_settings')->toString();
-    $response = new RedirectResponse($redirect_url);
-    $response->send();
-    return $response;
-  }
 
-  /**
-   * Gets response data and saves it in config.
-   *
-   * @return \Symfony\Component\HttpFoundation\RedirectResponse
-   *   Returns Hubspot Connection Response(api key values like access_token,
-   *   refresh token, expire_in). access_token expires and needs to be
-   *   refreshed using the refresh_token.
-   */
-  public function hubspotOauthRefresh() {
-    global $base_url;
-    $refresh_token = \Drupal::state()->get('hubspot.hubspot_refresh_token');
-    if (!$refresh_token) {
-      $this->messenger()->addError($this->t('Refresh token not found. Reconnect to your HubSpot account.'), FALSE);
-    }
-    else {
-      try {
-        $reauth = \Drupal::httpClient()->post('https://api.hubapi.com/oauth/v1/token', [
-          'headers' => ['Content-Type' => 'application/x-www-form-urlencoded;charset=utf-8'],
-          'form_params' => [
-            'grant_type' => 'refresh_token',
-            'client_id' => $this->configFactory->get('hubspot_client_id'),
-            'client_secret' => $this->configFactory->get('hubspot_client_secret'),
-            'redirect_uri' => $base_url . Url::fromRoute('hubspot.oauth_connect')->toString(),
-            'refresh_token' => $refresh_token,
-          ],
-        ])->getBody();
-        $data = Json::decode($reauth);
-        \Drupal::state()->set('hubspot.hubspot_access_token', $data['access_token']);
-        \Drupal::state()->set('hubspot.hubspot_refresh_token', $data['refresh_token']);
-        \Drupal::state()->set('hubspot.hubspot_expires_in', ($data['expires_in'] + \Drupal::time()->getRequestTime()));
-      }
-      catch (RequestException $e) {
-        watchdog_exception('Hubspot', $e);
-      }
-    }
-
-    $redirect_url = Url::fromRoute('hubspot.admin_settings')->toString();
-    $response = new RedirectResponse($redirect_url);
-    $response->send();
-    return $response;
+    return $this->redirect('hubspot.admin_settings');
   }
 
 }

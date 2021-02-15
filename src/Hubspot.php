@@ -110,8 +110,35 @@ class Hubspot {
    * @return bool
    *   True if the OAuth Refresh token is set. False, otherwise.
    */
-  public function isConfigured() {
+  public function isConfigured(): bool {
     return !empty($this->state->get('hubspot.hubspot_refresh_token'));
+  }
+
+  /**
+   * Authorize site via OAuth.
+   *
+   * @param string $code
+   *   Auth authorization code.
+   *
+   * @throws \GuzzleHttp\Exception\GuzzleException
+   */
+  public function authorize(string $code) {
+    $response = $this->request('https://api.hubapi.com/oauth/v1/token', [
+      'headers' => ['Content-Type' => 'application/x-www-form-urlencoded;charset=utf-8'],
+      'form_params' => [
+        'grant_type' => 'authorization_code',
+        'client_id' => $this->config->get('hubspot_client_id'),
+        'client_secret' => $this->config->get('hubspot_client_secret'),
+        'redirect_uri' => Url::fromRoute('hubspot.oauth_connect', [], [
+          'absolute' => TRUE,
+        ])->toString(),
+        'code' => $code,
+      ],
+    ]);
+    $data = $response['value'];
+    $this->state->set('hubspot.hubspot_access_token', $data['access_token']);
+    $this->state->set('hubspot.hubspot_refresh_token', $data['refresh_token']);
+    $this->state->set('hubspot.hubspot_expires_in', ($data['expires_in'] + $this->currentRequest->server->get('REQUEST_TIME')));
   }
 
   /**
@@ -122,7 +149,7 @@ class Hubspot {
    *
    * @throws \GuzzleHttp\Exception\GuzzleException
    */
-  public function getHubspotForms() {
+  public function getHubspotForms(): array {
     static $hubspot_forms;
 
     if (!isset($hubspot_forms)) {
@@ -236,7 +263,7 @@ class Hubspot {
    */
   public function submitHubspotForm(string $form_guid, array $form_field_values, array $context = []): array {
     // Convert list values into semicolon separated lists.
-    array_walk($form_field_values, function (&$value, $key) {
+    array_walk($form_field_values, function (&$value) {
       if (is_array($value)) {
         $value = implode(';', $value);
       }
@@ -278,14 +305,7 @@ class Hubspot {
    *
    * @see http://docs.hubapi.com/wiki/Searching_Leads
    */
-  public function hubspotGetRecent($n = 5): array {
-    $access_token = \Drupal::state()->get('hubspot.hubspot_access_token');
-    $n = intval($n);
-
-    if (empty($access_token)) {
-      return ['Error' => $this->t('This site is not connected to a HubSpot Account.')];
-    }
-
+  public function hubspotGetRecent(int $n = 5): array {
     $api = 'https://api.hubapi.com/contacts/v1/lists/recently_updated/contacts/recent';
 
     $options = [

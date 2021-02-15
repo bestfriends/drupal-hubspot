@@ -5,10 +5,7 @@
  * Sends Webform results to HubSpot's Forms API.
  */
 
-use Drupal\Component\Serialization\Json;
 use Drupal\Core\Url;
-use GuzzleHttp\Exception\RequestException;
-use Symfony\Component\HttpFoundation\RedirectResponse;
 
 /**
  * Implements hook_help().
@@ -73,27 +70,7 @@ function _hubspot_default_value($id, $hubspot_guid = NULL, $webform_field = NULL
  * Upon failure, it will attempt to reauthenticate.
  */
 function _hubspot_get_forms() {
-  $access_token = \Drupal::state()->get('hubspot.hubspot_access_token');
-  if (empty($access_token)) {
-    return ['error' => t('This site is not connected to a HubSpot Account.')];
-  }
-
-  $api = 'https://api.hubapi.com/forms/v2/forms';
-  $url = Url::fromUri($api)->toString();
-  try {
-    $response = \Drupal::httpClient()->get($url, [
-      'headers' => ['Authorization' => 'Bearer ' . $access_token],
-    ]);
-    $data = (string) $response->getBody();
-    return ['value' => Json::decode($data)];
-  }
-  catch (RequestException $e) {
-    // Try to reauthenticate.
-    $reauth = Url::fromRoute('hubspot.reauth')->toString();
-    $response = new RedirectResponse($reauth);
-    $response->send();
-    return $response;
-  }
+  return \Drupal::service('hubspot.hubspot')->getHubspotForms();
 }
 
 /**

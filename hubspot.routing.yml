@@ -12,13 +12,6 @@ hubspot.oauth_connect:
     _controller: '\Drupal\hubspot\Controller\Controller::hubspotOauthConnect'
   requirements:
     _permission: 'administer site configuration'
-hubspot.reauth:
-  path: /hubspot/reauth
-  defaults:
-    _title: 'HubSpot reauth'
-    _controller: '\Drupal\hubspot\Controller\Controller::hubspotOauthRefresh'
-  requirements:
-    _permission: 'administer site configuration'
 hubspot.form_settings:
   path: '/node/{node}/webform/hubspot'
   defaults:
