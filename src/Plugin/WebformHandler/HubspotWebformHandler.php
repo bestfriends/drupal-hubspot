@@ -3,19 +3,12 @@
 namespace Drupal\hubspot\Plugin\WebformHandler;
 
 use Drupal\Component\Utility\NestedArray;
-use Drupal\Core\Config\ConfigFactoryInterface;
-use Drupal\Core\Database\Connection;
-use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\Form\FormStateInterface;
-use Drupal\Core\Logger\LoggerChannelFactoryInterface;
-use Drupal\Core\Mail\MailManager;
+use Drupal\Core\Link;
 use Drupal\Core\Url;
-use Drupal\hubspot\Hubspot;
-use Drupal\node\NodeStorageInterface;
 use Drupal\webform\Plugin\WebformHandlerBase;
 use Drupal\webform\WebformSubmissionInterface;
-use Drupal\webform\WebformSubmissionConditionsValidatorInterface;
-use GuzzleHttp\ClientInterface;
+use GuzzleHttp\Exception\GuzzleException;
 use GuzzleHttp\Exception\RequestException;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 
@@ -34,32 +27,11 @@ use Symfony\Component\DependencyInjection\ContainerInterface;
 class HubspotWebformHandler extends WebformHandlerBase {
 
   /**
-   * The HTTP client to fetch the feed data with.
-   *
-   * @var \GuzzleHttp\ClientInterface
-   */
-  protected $httpClient;
-
-  /**
    * The node storage.
    *
-   * @var \Drupal\Core\Entity\EntityStorageInterface
+   * @var \Drupal\Core\Entity\EntityTypeManagerInterface
    */
-  protected $nodeStorage;
-
-  /**
-   * Stores the configuration factory.
-   *
-   * @var \Drupal\Core\Config\ConfigFactoryInterface
-   */
-  protected $configFactory;
-
-  /**
-   * The logger factory.
-   *
-   * @var \Drupal\Core\Logger\LoggerChannelFactoryInterface
-   */
-  protected $loggerFactory;
+  protected $entityTypeManager;
 
   /**
    * The mail manager.
@@ -67,13 +39,6 @@ class HubspotWebformHandler extends WebformHandlerBase {
    * @var \Drupal\Core\Mail\MailManagerInterface
    */
   protected $mailManager;
-
-  /**
-   * Internal reference to the webform.
-   *
-   * @var \Drupal\webform\Entity\Webform
-   */
-  protected $webform;
 
   /**
    * Internal reference to the hubspot forms.
@@ -85,62 +50,34 @@ class HubspotWebformHandler extends WebformHandlerBase {
   /**
    * {@inheritdoc}
    */
-  public function __construct(
-      array $configuration,
-      $plugin_id,
-      $plugin_definition,
-      LoggerChannelFactoryInterface $logger_factory,
-      ConfigFactoryInterface $config_factory,
-      EntityTypeManagerInterface $entity_type_manager,
-      WebformSubmissionConditionsValidatorInterface $conditions_validator,
-      ClientInterface $httpClient,
-      NodeStorageInterface $node_storage,
-      MailManager $mailManager,
-      Hubspot $hubspot
-  ) {
-    parent::__construct($configuration, $plugin_id, $plugin_definition, $logger_factory, $config_factory, $entity_type_manager, $conditions_validator);
-    $this->httpClient = $httpClient;
-    $this->nodeStorage = $node_storage;
-    $this->mailManager = $mailManager;
-    $this->hubspot = $hubspot;
-  }
-
-  /**
-   * {@inheritdoc}
-   */
   public static function create(ContainerInterface $container, array $configuration, $plugin_id, $plugin_definition) {
-    return new static(
-      $configuration,
-      $plugin_id,
-      $plugin_definition,
-      $container->get('logger.factory'),
-      $container->get('config.factory'),
-      $container->get('entity_type.manager'),
-      $container->get('webform_submission.conditions_validator'),
-      $container->get('http_client'),
-      $container->get('entity.manager')->getStorage('node'),
-      $container->get('plugin.manager.mail'),
-      $container->get('hubspot.hubspot')
-    );
+
+    $instance = parent::create($container, $configuration, $plugin_id, $plugin_definition);
+    $instance->entityTypeManager = $container->get('entity_type.manager');
+    $instance->mailManager = $container->get('plugin.manager.mail');
+    $instance->hubspot = $container->get('hubspot.hubspot');
+    return $instance;
   }
 
   /**
    * {@inheritdoc}
    */
-  public function getSummary() {
+  public function getSummary(): array {
     return [];
   }
 
   /**
    * {@inheritdoc}
    */
-  public function buildConfigurationForm(array $form, FormStateInterface $form_state) {
+  public function buildConfigurationForm(array $form, FormStateInterface $form_state): array {
     // First check if hubspot is connected.
     if (!$this->hubspot->isConfigured()) {
-      $form['mappping']['notice'] = [
+      $form['mapping']['notice'] = [
         '#type' => 'item',
         '#title' => $this->t('Notice'),
-        '#markup' => $this->t('Your hubspot account is not connected. Please configure that first <a href="/admin/config/services/hubspot">here</a>.'),
+        '#markup' => $this->t('Your site account is not connected to a Hubspot account, please @admin_link first.', [
+          '@admin_link' => Link::createFromRoute('connect to Hubspot', 'hubspot.admin_settings'),
+        ]),
       ];
       return $form;
     }
@@ -156,12 +93,15 @@ class HubspotWebformHandler extends WebformHandlerBase {
 
     $options = ['--donotmap--' => 'Do Not Map'];
 
-    $hubspot_forms = $this->hubspot->getHubspotForms();
-
-    foreach ($hubspot_forms as $hubspot_form) {
-      $options[$hubspot_form['guid']] = $hubspot_form['name'];
+    try {
+      $hubspot_forms = $this->hubspot->getHubspotForms();
     }
-
+    catch (GuzzleException $e) {
+      $this->messenger()->addWarning('Unable to load hubspot form info.');
+      return $form;
+    }
+    $hubspot_forms = array_column($hubspot_forms, NULL, 'guid');
+    $options = array_column($hubspot_forms, 'name', 'guid');
 
     // Sort $options alphabetically and retain key (guid).
     asort($options, SORT_STRING | SORT_FLAG_CASE);
@@ -236,12 +176,7 @@ class HubspotWebformHandler extends WebformHandlerBase {
         $hubspot_guid = $default_hubspot_guid;
       }
 
-      foreach ($hubspot_forms as $key => $val) {
-        if ($val['guid'] == $hubspot_guid) {
-          $index = $key;
-        }
-      }
-      $hubspot_fields = $hubspot_forms[$index];
+      $hubspot_fields = $hubspot_forms[$hubspot_guid] ?? [];
       $options = ['--donotmap--' => 'Do Not Map'];
       foreach ($hubspot_fields['formFieldGroups'] as $hubspot_field) {
         $options[$hubspot_field['fields'][0]['name']] = $hubspot_field['fields'][0]['label'];
@@ -284,8 +219,16 @@ class HubspotWebformHandler extends WebformHandlerBase {
 
   /**
    * AJAX callback for hubspot form change event.
+   *
+   * @param array $form
+   *   Active form array.
+   * @param \Drupal\Core\Form\FormStateInterface $form_state
+   *   Active form state.
+   *
+   * @return array
+   *   Render array.
    */
-  public function showWebformFields(array $form, FormStateInterface $form_state) {
+  public function showWebformFields(array $form, FormStateInterface $form_state): array {
     return $form['settings']['mapping']['field_group']['fields'];
   }
 
@@ -294,7 +237,7 @@ class HubspotWebformHandler extends WebformHandlerBase {
    */
   public function submitConfigurationForm(array &$form, FormStateInterface $form_state) {
     if (!$this->hubspot->isConfigured()) {
-      return FALSE;
+      return;
     }
 
     $hubspot_id = $form_state->getValues()['mapping']['hubspot_form'];
@@ -308,7 +251,7 @@ class HubspotWebformHandler extends WebformHandlerBase {
       $settings['field_mapping'] = array_filter($fields, function ($hubspot_field) {
         return $hubspot_field !== '--donotmap--';
       });
-      drupal_set_message($this->t('Saved new field mapping.'));
+      $this->messenger()->addMessage($this->t('Saved new field mapping.'));
     }
 
     $this->setSettings($settings);
@@ -328,7 +271,7 @@ class HubspotWebformHandler extends WebformHandlerBase {
    * @return array
    *   An associative array containing hubspot configuration values.
    */
-  public function getSettings() {
+  public function getSettings(): array {
     $configuration = $this->getConfiguration();
     return $configuration['settings'] ?? [];
   }
@@ -358,19 +301,19 @@ class HubspotWebformHandler extends WebformHandlerBase {
     // Get the hubspot config settings.
     $request_post_data = $this->getPostData($operation, $webform_submission);
     $entity_type = $request_post_data['entity_type'];
-    if ($entity_type == 'node') {
-      // Case 1: of node forms.
-      $entity_id = $request_post_data['entity_id'];
-      $node = $this->nodeStorage->load($entity_id);
-      // Node form title of some webform type.
-      $form_title = $node->getTitle();
+    if ($entity_type) {
+      $entity_storage = $this->entityTypeManager->getStorage($entity_type);
+      $entity = $entity_storage->load($request_post_data['entity_id']);
+      $form_title = $entity->label();
       $page_url = Url::fromUserInput($request_post_data['uri'], ['absolute' => TRUE])->toString();
     }
     else {
       // Case 2: Webform it self.
       // Webform title.
-      $form_title = $this->getWebform()->get('title');
-      $page_url = Url::fromUserInput('/form/' . $request_post_data['webform_id'], ['absolute' => TRUE])->toString();
+      $form_title = $this->getWebform()->label();
+      $page_url = $this->webform->toUrl('canonical', [
+        'absolute' => TRUE,
+      ])->toString();
     }
     $settings = $this->getSettings();
     $form_guid = $settings['form_guid'];
@@ -408,7 +351,7 @@ class HubspotWebformHandler extends WebformHandlerBase {
         $data = (string) $response->getBody();
 
         if ($response->getStatusCode() == '200' || $response->getStatusCode() == '204') {
-          $this->loggerFactory->get('HubSpot')->notice('Webform "@form" results succesfully submitted to HubSpot.', [
+          $this->loggerFactory->get('HubSpot')->notice('Webform "@form" results successfully submitted to HubSpot.', [
             '@form' => $form_title,
           ]);
         }
@@ -439,6 +382,13 @@ class HubspotWebformHandler extends WebformHandlerBase {
       $this->loggerFactory->get('HubSpot')->notice('HTTP error when submitting HubSpot data from Webform "@form": <pre>@error</pre>', [
         '@form' => $form_title,
         '@error' => $e->getResponse()->getBody()->getContents(),
+      ]);
+      watchdog_exception('HubSpot', $e);
+    }
+    catch (GuzzleException $e) {
+      $this->loggerFactory->get('HubSpot')->notice('HTTP error when submitting HubSpot data from Webform "@form": <pre>@error</pre>', [
+        '@form' => $form_title,
+        '@error' => $e->getMessage(),
       ]);
       watchdog_exception('HubSpot', $e);
     }

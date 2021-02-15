@@ -246,7 +246,6 @@ class Hubspot {
     $api = 'https://forms.hubspot.com/uploads/form/v2/' . $portal_id . '/' . $form_guid;
     $url = Url::fromUri($api)->toString();
 
-
     $hs_context = [
       'hutk' => $this->currentRequest->cookies->get('hubspotutk') ?? '',
       'ipAddress' => $this->currentRequest->getClientIp(),
@@ -265,4 +264,5 @@ class Hubspot {
 
     return $this->request('POST', $url, $request_options);
   }
+
 }

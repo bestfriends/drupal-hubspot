@@ -11,7 +11,7 @@ use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpFoundation\RedirectResponse;
 
 /**
- * Class AdminSettings.
+ * Hubspot admin settings form.
  *
  * @package Drupal\hubspot\Form
  */
@@ -73,8 +73,9 @@ class AdminSettings extends FormBase {
       '#type' => 'textfield',
       '#required' => TRUE,
       '#default_value' => $this->configFactory->get('hubspot_portal_id'),
-      '#description' => $this->t('Enter the HubSpot Portal ID for this site.
-      <a href="https://knowledge.hubspot.com/articles/kcs_article/account/where-can-i-find-my-hub-id" target="_blank">How do I find my portal ID?</a>.'),
+      '#description' => $this->t('Enter the HubSpot Portal ID for this site. <a href="@url" target="_blank">How do I find my portal ID?</a>.', [
+        '@url' => 'https://knowledge.hubspot.com/articles/kcs_article/account/where-can-i-find-my-hub-id',
+      ]),
     ];
 
     if ($this->configFactory->get('hubspot_portal_id')) {
@@ -87,7 +88,12 @@ class AdminSettings extends FormBase {
       if (\Drupal::state()->get('hubspot.hubspot_refresh_token')) {
         $form['settings']['hubspot_authentication']['#suffix'] = $this->t('Your HubSpot account is connected.');
         $form['settings']['hubspot_authentication']['#value'] = $this->t('Disconnect HubSpot Account');
-        $form['settings']['hubspot_authentication']['#submit'] = [[$this, 'hubspotOauthDisconnect']];
+        $form['settings']['hubspot_authentication']['#submit'] = [
+          [
+            $this,
+            'hubspotOauthDisconnect',
+          ],
+        ];
       }
     }
 

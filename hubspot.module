@@ -54,16 +54,17 @@ function hubspot_help($route_name) {
  * Returns the default value for the given arguments.
  */
 function _hubspot_default_value($id, $hubspot_guid = NULL, $webform_field = NULL) {
-  if (empty($hubspot_guid)) {
-    return db_query_range("SELECT hubspot_guid FROM {hubspot} h WHERE h.id = :id", 0, 1, [':id' => $id])->fetchField();
+  $query = \Drupal::database()->select('hubspot', 'h');
+  $query->addField('h', 'hubspot_guid');
+  $query->condition('h.id', $id);
+
+  if ($hubspot_guid && $webform_field) {
+    $query->condition('h.hubspot_guid', $hubspot_guid);
+    $query->condition('h.webform_field', $webform_field);
   }
-  else {
-    return db_query_range("SELECT hubspot_field FROM {hubspot} h WHERE h.id = :id AND h.hubspot_guid = :guid AND h.webform_field = :webform_field", 0, 1, [
-      ':id' => $id,
-      ':guid' => $hubspot_guid,
-      ':webform_field' => $webform_field,
-    ])->fetchField();
-  }
+
+  $query->range(0, 1);
+  return $query->execute()->fetchField();
 }
 
 /**
