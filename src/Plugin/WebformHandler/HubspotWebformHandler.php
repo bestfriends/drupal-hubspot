@@ -183,7 +183,7 @@ class HubspotWebformHandler extends WebformHandlerBase {
               // Loop through a composite field to get all fields.
               foreach ($value['#webform_composite_elements'] as $composite_field => $composite_value) {
                 $key = $webform_field . ':' . $composite_field;
-                $webform_fields_options[$key] = (@$value['#title'] . ':' . $composite_value['#title'] ?: $key) . ' (' . $composite_value['#type'] . ')';
+                $webform_fields_options[$key] = (@$value['#title'] . ': ' . $composite_value['#title'] ?: $key) . ' (' . $composite_value['#type'] . ')';
               }
             }
             else {
@@ -201,7 +201,7 @@ class HubspotWebformHandler extends WebformHandlerBase {
             ];
           }
           if (isset($settings['field_mapping'][$field->name])) {
-            $form['mapping']['field_group']['fields'][$field->name] = $settings['field_mapping'][$field->name];
+            $form['mapping']['field_group']['fields'][$field->name]['#default_value'] = $settings['field_mapping'][$field->name];
           }
         }
       }
