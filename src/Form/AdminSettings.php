@@ -2,9 +2,12 @@
 
 namespace Drupal\hubspot\Form;
 
+use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Form\ConfigFormBase;
 use Drupal\Core\Form\FormStateInterface;
+use Drupal\Core\State\StateInterface;
 use Drupal\Core\Url;
+use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpFoundation\RedirectResponse;
 
 /**
@@ -20,6 +23,36 @@ class AdminSettings extends ConfigFormBase {
    * @var string
    */
   const SETTINGS = 'hubspot.settings';
+
+  /**
+   * The state key/value store.
+   *
+   * @var \Drupal\Core\State\StateInterface
+   */
+  protected $state;
+
+  /**
+   * Constructs a new AdminSettings object.
+   *
+   * @param \Drupal\Core\Config\ConfigFactoryInterface $config_factory
+   *   The factory for configuration objects.
+   * @param \Drupal\Core\State\StateInterface $state
+   *   The state key/value store.
+   */
+  public function __construct(ConfigFactoryInterface $config_factory, StateInterface $state) {
+    parent::__construct($config_factory);
+    $this->state = $state;
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public static function create(ContainerInterface $container) {
+    return new static(
+      $container->get('config.factory'),
+      $container->get('state')
+    );
+  }
 
   /**
    * {@inheritdoc}
@@ -68,7 +101,7 @@ class AdminSettings extends ConfigFormBase {
         '#submit' => [[$this, 'hubspotOauthSubmitForm']],
       ];
 
-      if (\Drupal::state()->get('hubspot.hubspot_refresh_token')) {
+      if ($this->state->get('hubspot.hubspot_refresh_token')) {
         $form['settings']['hubspot_authentication']['#suffix'] = $this->t('Your HubSpot account is connected.');
         $form['settings']['hubspot_authentication']['#value'] = $this->t('Disconnect HubSpot Account');
         $form['settings']['hubspot_authentication']['#submit'] = [
@@ -221,7 +254,7 @@ class AdminSettings extends ConfigFormBase {
    */
   public function hubspotOauthDisconnect(array &$form, FormStateInterface $form_state) {
     $this->messenger()->addStatus($this->t('Successfully disconnected from HubSpot.'), FALSE);
-    \Drupal::state()->delete('hubspot.hubspot_refresh_token');
+    $this->state->delete('hubspot.hubspot_refresh_token');
   }
 
 }

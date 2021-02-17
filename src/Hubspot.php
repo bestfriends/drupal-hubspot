@@ -194,7 +194,7 @@ class Hubspot {
     $access_token = $this->state
       ->get('hubspot.hubspot_access_token');
     if (empty($access_token)) {
-      return ['error' => t('This site is not connected to a HubSpot Account.')];
+      return ['error' => $this->t('This site is not connected to a HubSpot Account.')];
     }
 
     $options += [
