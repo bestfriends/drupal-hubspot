@@ -223,18 +223,23 @@ class Hubspot {
    */
   public function submitHubspotForm(string $form_guid, array $form_field_values, array $context = [], array $request_body = []): Response {
     // Convert list values into semicolon separated lists.
-    array_walk($form_field_values, function (&$value) {
-      if (is_array($value)) {
-        $value = implode(';', $value);
+    $formatted_form_values = [];
+    foreach ($form_field_values as $field_name => $field_value) {
+      if (is_array($field_value)) {
+        $field_value = implode(';', $field_value);
       }
-    });
+      $formatted_form_values[] = [
+        'name' => $field_name,
+        'value' => $field_value,
+      ];
+    }
 
     $request_body += [
-      'fields' => $form_field_values,
+      'fields' => $formatted_form_values,
       'context' => $context + [
         'hutk' => $this->currentRequest->cookies->get('hubspotutk') ?? '',
         'ipAddress' => $this->currentRequest->getClientIp(),
-        'pageUrl' => $this->currentRequest->headers->get('referer'),
+        'pageUri' => $this->currentRequest->headers->get('referer'),
       ],
     ];
 
