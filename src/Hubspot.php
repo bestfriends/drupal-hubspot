@@ -263,11 +263,13 @@ class Hubspot {
     $request_body += [
       'fields' => $formatted_form_values,
       'context' => $context + [
-        'hutk' => $this->currentRequest->cookies->get('hubspotutk') ?? '',
         'ipAddress' => $this->currentRequest->getClientIp(),
         'pageUri' => $this->currentRequest->headers->get('referer'),
       ],
     ];
+    if (($hutk = $this->currentRequest->cookies->get('hubspotutk'))) {
+      $request_body['context']['hutk'] = $hutk;
+    }
 
     $portal_id = $this->config->get('hubspot_portal_id');
     return $this->getHubspotClient()->forms()->submit($portal_id, $form_guid, $request_body);
