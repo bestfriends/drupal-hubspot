@@ -2,6 +2,7 @@
 
 namespace Drupal\hubspot\Plugin\Block;
 
+use Drupal\Component\Datetime\TimeInterface;
 use Drupal\Core\Access\AccessResult;
 use Drupal\Core\Block\BlockBase;
 use Drupal\Core\Datetime\DateFormatter;
@@ -37,6 +38,13 @@ class HubspotBlock extends BlockBase implements ContainerFactoryPluginInterface 
   protected $dateFormatter;
 
   /**
+   * The time service.
+   *
+   * @var \Drupal\Component\Datetime\TimeInterface
+   */
+  protected $time;
+
+  /**
    * HubspotBlock constructor.
    *
    * @param array $configuration
@@ -49,11 +57,14 @@ class HubspotBlock extends BlockBase implements ContainerFactoryPluginInterface 
    *   Hubspot API Client service.
    * @param \Drupal\Core\Datetime\DateFormatter $dateFormatter
    *   The date formatter service.
+   * @param \Drupal\Component\Datetime\TimeInterface $time
+   *   The time service.
    */
-  public function __construct(array $configuration, string $plugin_id, $plugin_definition, Hubspot $hubspot, DateFormatter $dateFormatter) {
+  public function __construct(array $configuration, string $plugin_id, $plugin_definition, Hubspot $hubspot, DateFormatter $dateFormatter, TimeInterface $time) {
     parent::__construct($configuration, $plugin_id, $plugin_definition);
     $this->hubspot = $hubspot;
     $this->dateFormatter = $dateFormatter;
+    $this->time = $time;
   }
 
   /**
@@ -65,7 +76,8 @@ class HubspotBlock extends BlockBase implements ContainerFactoryPluginInterface 
       $plugin_id,
       $plugin_definition,
       $container->get('hubspot.hubspot'),
-      $container->get('date.formatter')
+      $container->get('date.formatter'),
+      $container->get('datetime.time')
     );
   }
 
@@ -81,8 +93,6 @@ class HubspotBlock extends BlockBase implements ContainerFactoryPluginInterface 
 
   /**
    * {@inheritdoc}
-   *
-   * @throws \GuzzleHttp\Exception\GuzzleException
    */
   public function build(): array {
     $leads = $this->hubspot->hubspotGetRecent();
@@ -118,7 +128,7 @@ class HubspotBlock extends BlockBase implements ContainerFactoryPluginInterface 
         '#markup' => Link::fromTextAndUrl($first_name . ' ' .
           $last_name, $url)->toString() . ' ' . $this->t('(@time ago)',
           [
-            '@time' => $this->dateFormatter->formatInterval(\Drupal::time()->getRequestTime() - floor($lead['addedAt'] / 1000)),
+            '@time' => $this->dateFormatter->formatInterval($this->time->getRequestTime() - floor($lead['addedAt'] / 1000)),
           ]
         ),
       ];
