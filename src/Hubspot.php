@@ -138,6 +138,10 @@ class Hubspot {
       throw new \LogicException('Hubspot api has not been configured.');
     }
 
+    if ($this->state->get('hubspot.hubspot_expires_in') < time()) {
+      $this->refreshTokens();
+    }
+
     if (!$this->hubspotClient) {
       $access_token = $this->state->get('hubspot.hubspot_access_token');
       $this->hubspotClient = HubspotClientFactory::createWithOAuth2Token($access_token);
@@ -188,6 +192,28 @@ class Hubspot {
   }
 
   /**
+   * Authorize site via OAuth.
+   *
+   * @throws \SevenShores\Hubspot\Exceptions\BadRequest
+   */
+  public function refreshTokens() {
+    $client = new HubspotClientFactory([], NULL, [
+      'http_errors' => FALSE,
+    ], TRUE);
+
+    $tokens = $client->oAuth2()->getTokensByRefresh(
+      $this->config->get('hubspot_client_id'),
+      $this->config->get('hubspot_client_secret'),
+      $this->state->get('hubspot.hubspot_refresh_token'),
+    );
+    $this->state->set('hubspot.hubspot_access_token', $tokens['access_token']);
+    $this->state->set('hubspot.hubspot_refresh_token', $tokens['refresh_token']);
+    $this->state->set('hubspot.hubspot_expires_in', ($tokens['expires_in'] + $this->currentRequest->server->get('REQUEST_TIME')));
+
+    $this->hubspotClient = NULL;
+  }
+
+  /**
    * Get hubspot forms and fields from their API.
    *
    * @return array
@@ -200,7 +226,7 @@ class Hubspot {
     if (!isset($hubspot_forms)) {
       $response = $this->getHubspotClient()->forms()->all();
 
-      $hubspot_forms = $response->forms;
+      $hubspot_forms = $response->data;
     }
 
     return $hubspot_forms;
