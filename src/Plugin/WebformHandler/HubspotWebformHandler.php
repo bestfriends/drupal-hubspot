@@ -8,8 +8,6 @@ use Drupal\Core\Link;
 use Drupal\Core\Url;
 use Drupal\webform\Plugin\WebformHandlerBase;
 use Drupal\webform\WebformSubmissionInterface;
-use GuzzleHttp\Exception\GuzzleException;
-use GuzzleHttp\Exception\RequestException;
 use SevenShores\Hubspot\Exceptions\HubspotException;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 
@@ -95,7 +93,7 @@ class HubspotWebformHandler extends WebformHandlerBase {
     try {
       $hubspot_forms = $this->hubspot->getHubspotForms();
     }
-    catch (GuzzleException $e) {
+    catch (HubspotException $e) {
       $this->messenger()->addWarning('Unable to load hubspot form info.');
       return $form;
     }
