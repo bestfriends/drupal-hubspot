@@ -10,6 +10,7 @@ use Drupal\webform\Plugin\WebformHandlerBase;
 use Drupal\webform\WebformSubmissionInterface;
 use GuzzleHttp\Exception\GuzzleException;
 use GuzzleHttp\Exception\RequestException;
+use SevenShores\Hubspot\Exceptions\HubspotException;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 
 /**
@@ -330,8 +331,7 @@ class HubspotWebformHandler extends WebformHandlerBase {
     }
 
     try {
-      $hubspot_response = $this->hubspot->submitHubspotForm($form_guid, $form_values, $page_url);
-      $response = $hubspot_response['response'] ?? NULL;
+      $response = $this->hubspot->submitHubspotForm($form_guid, $form_values, $context, $request_body);
 
       // Debugging information.
       $config = $this->configFactory->get('hubspot.settings');
@@ -367,21 +367,14 @@ class HubspotWebformHandler extends WebformHandlerBase {
       else {
         $this->loggerFactory->get('HubSpot')->notice('HTTP error when submitting HubSpot data from Webform "@form": <pre>@msg</pre>', [
           '@form' => $form_title,
-          '@msg' => $hubspot_response['error'],
+          '@msg' => 'No response returned from Hubspot Client',
         ]);
       }
     }
-    catch (RequestException $e) {
+    catch (HubspotException $e) {
       $this->loggerFactory->get('HubSpot')->notice('HTTP error when submitting HubSpot data from Webform "@form": <pre>@error</pre>', [
         '@form' => $form_title,
         '@error' => $e->getResponse()->getBody()->getContents(),
-      ]);
-      watchdog_exception('HubSpot', $e);
-    }
-    catch (GuzzleException $e) {
-      $this->loggerFactory->get('HubSpot')->notice('HTTP error when submitting HubSpot data from Webform "@form": <pre>@error</pre>', [
-        '@form' => $form_title,
-        '@error' => $e->getMessage(),
       ]);
       watchdog_exception('HubSpot', $e);
     }
