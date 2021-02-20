@@ -301,17 +301,18 @@ class HubspotWebformHandler extends WebformHandlerBase {
     // Get the hubspot config settings.
     $request_post_data = $this->getPostData($operation, $webform_submission);
     $entity_type = $request_post_data['entity_type'];
+    $context = [];
     if ($entity_type) {
       $entity_storage = $this->entityTypeManager->getStorage($entity_type);
       $entity = $entity_storage->load($request_post_data['entity_id']);
       $form_title = $entity->label();
-      $page_url = Url::fromUserInput($request_post_data['uri'], ['absolute' => TRUE])->toString();
+      $context['pageUrl'] = Url::fromUserInput($request_post_data['uri'], ['absolute' => TRUE])->toString();
     }
     else {
       // Case 2: Webform it self.
       // Webform title.
       $form_title = $this->getWebform()->label();
-      $page_url = $this->webform->toUrl('canonical', [
+      $context['pageUrl'] = $this->webform->toUrl('canonical', [
         'absolute' => TRUE,
       ])->toString();
     }
@@ -337,7 +338,7 @@ class HubspotWebformHandler extends WebformHandlerBase {
     }
 
     try {
-      $hubspot_response = $this->hubspot->submitHubspotForm($form_guid, $form_values, $page_url);
+      $hubspot_response = $this->hubspot->submitHubspotForm($form_guid, $form_values, $context);
       $response = $hubspot_response['response'] ?? NULL;
 
       // Debugging information.
