@@ -123,7 +123,7 @@ class Hubspot {
    * @throws \GuzzleHttp\Exception\GuzzleException
    */
   public function authorize(string $code) {
-    $response = $this->request('https://api.hubapi.com/oauth/v1/token', [
+    $response = $this->httpClient->post('https://api.hubapi.com/oauth/v1/token', [
       'headers' => ['Content-Type' => 'application/x-www-form-urlencoded;charset=utf-8'],
       'form_params' => [
         'grant_type' => 'authorization_code',
@@ -135,7 +135,7 @@ class Hubspot {
         'code' => $code,
       ],
     ]);
-    $data = $response['value'];
+    $data = Json::decode($response->getBody()->getContents());
     $this->state->set('hubspot.hubspot_access_token', $data['access_token']);
     $this->state->set('hubspot.hubspot_refresh_token', $data['refresh_token']);
     $this->state->set('hubspot.hubspot_expires_in', ($data['expires_in'] + $this->currentRequest->server->get('REQUEST_TIME')));
