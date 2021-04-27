@@ -111,7 +111,7 @@ class Hubspot {
     $this->logger = $logger_factory->get('hubspot');
     $this->mailManager = $mailManager;
     $this->currentRequest = $requestStack->getCurrentRequest();
-    $this->emailValidator = $emailValidator
+    $this->emailValidator = $emailValidator;
   }
 
   /**
@@ -276,7 +276,7 @@ class Hubspot {
   public function submitHubspotForm(string $form_guid, array $form_field_values, array $context = []): array {
     // Convert list values into semicolon separated lists.
     array_walk($form_field_values, function (&$value) {
-      // Encode e-mailadress
+      // Encode e-mail addresses.
       if (is_string($value) && $this->emailValidator->isValid($value)) {
         $value = str_replace('%40', '@', urlencode($value));
       }
