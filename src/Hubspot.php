@@ -94,7 +94,7 @@ class Hubspot {
    *   Drupal config factory.
    * @param \GuzzleHttp\ClientInterface $httpClient
    *   Drupal http client.
-   * @param \Drupal\Core\Mail\MailManager $mailManager
+   * @param \Drupal\Core\Mail\MailManagerInterface $mailManager
    *   Drupal mailer service.
    * @param \Symfony\Component\HttpFoundation\RequestStack $requestStack
    *   Drupal request stack.
