@@ -1,6 +1,11 @@
 <?php
 
 /**
+ * @file
+ * Post Update hook file for hubspot.
+ */
+
+/**
  * Convert hubspot webform handler mapping to config.
  */
 function hubspot_post_update_table_to_configuration(&$sandbox) {
