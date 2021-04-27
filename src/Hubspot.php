@@ -264,7 +264,11 @@ class Hubspot {
   public function submitHubspotForm(string $form_guid, array $form_field_values, array $context = []): array {
     // Convert list values into semicolon separated lists.
     array_walk($form_field_values, function (&$value) {
-      $value = urlencode($value);
+      // Encode e-mailadress
+      if (is_string($value) && \Drupal::service('email.validator')->isValid($value)) {
+        $value = str_replace('%40', '@', urlencode($value));
+      }
+
       if (is_array($value)) {
         $value = implode(';', $value);
       }
