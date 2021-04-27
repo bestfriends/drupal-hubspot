@@ -4,7 +4,7 @@ namespace Drupal\hubspot;
 
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Logger\LoggerChannelFactoryInterface;
-use Drupal\Core\Mail\MailManager;
+use Drupal\Core\Mail\MailManagerInterface;
 use Drupal\Core\State\StateInterface;
 use Drupal\Core\Url;
 use GuzzleHttp\ClientInterface;
@@ -104,7 +104,7 @@ class Hubspot {
     LoggerChannelFactoryInterface $logger_factory,
     ConfigFactoryInterface $config_factory,
     ClientInterface $httpClient,
-    MailManager $mailManager,
+    MailManagerInterface $mailManager,
     RequestStack $requestStack
   ) {
     $this->state = $state;
