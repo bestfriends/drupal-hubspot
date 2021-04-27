@@ -8,3 +8,4 @@ services:
       - '@http_client'
       - '@plugin.manager.mail'
       - '@request_stack'
+      - '@email.validator'

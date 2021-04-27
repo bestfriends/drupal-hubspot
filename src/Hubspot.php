@@ -3,9 +3,10 @@
 namespace Drupal\hubspot;
 
 use Drupal\Component\Serialization\Json;
+use Drupal\Component\Utility\EmailValidatorInterface;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Logger\LoggerChannelFactoryInterface;
-use Drupal\Core\Mail\MailManager;
+use Drupal\Core\Mail\MailManagerInterface;
 use Drupal\Core\State\StateInterface;
 use Drupal\Core\Url;
 use GuzzleHttp\ClientInterface;
@@ -71,6 +72,13 @@ class Hubspot {
   private $currentRequest;
 
   /**
+   * Drupal's email validator.
+   *
+   * @var \Drupal\Component\Utility\EmailValidatorInterface
+   */
+  private $emailValidator;
+
+  /**
    * Create the hubspot integration service.
    *
    * @param \Drupal\Core\State\StateInterface $state
@@ -81,18 +89,21 @@ class Hubspot {
    *   Drupal config factory.
    * @param \GuzzleHttp\ClientInterface $httpClient
    *   Drupal http client.
-   * @param \Drupal\Core\Mail\MailManager $mailManager
+   * @param \Drupal\Core\Mail\MailManagerInterface $mailManager
    *   Drupal mailer service.
    * @param \Symfony\Component\HttpFoundation\RequestStack $requestStack
    *   Drupal request stack.
+   * @param \Drupal\Component\Utility\EmailValidatorInterface $emailValidator
+   *   Drupal's email validator.
    */
   public function __construct(
     StateInterface $state,
     LoggerChannelFactoryInterface $logger_factory,
     ConfigFactoryInterface $config_factory,
     ClientInterface $httpClient,
-    MailManager $mailManager,
-    RequestStack $requestStack
+    MailManagerInterface $mailManager,
+    RequestStack $requestStack,
+    EmailValidatorInterface $emailValidator
   ) {
     $this->state = $state;
     $this->httpClient = $httpClient;
@@ -100,6 +111,7 @@ class Hubspot {
     $this->logger = $logger_factory->get('hubspot');
     $this->mailManager = $mailManager;
     $this->currentRequest = $requestStack->getCurrentRequest();
+    $this->emailValidator = $emailValidator
   }
 
   /**
@@ -265,7 +277,7 @@ class Hubspot {
     // Convert list values into semicolon separated lists.
     array_walk($form_field_values, function (&$value) {
       // Encode e-mailadress
-      if (is_string($value) && \Drupal::service('email.validator')->isValid($value)) {
+      if (is_string($value) && $this->emailValidator->isValid($value)) {
         $value = str_replace('%40', '@', urlencode($value));
       }
 
