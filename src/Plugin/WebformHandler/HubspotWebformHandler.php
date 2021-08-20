@@ -304,6 +304,20 @@ class HubspotWebformHandler extends WebformHandlerBase {
     $request_post_data = $this->getPostData($operation, $webform_submission);
     $entity_type = $request_post_data['entity_type'];
     $context = [];
+
+    // Get webform.
+    $webform = $this->getWebform();
+
+    // Get all components.
+    $elements = $webform->getElementsDecodedAndFlattened();
+
+    // Loop through components and set new value for checkbox fields.
+    foreach ($elements as $component_key => $component) {
+      if ($component['#type'] == 'checkbox') {
+        $webform_submission->setElementData($component_key, $webform_submission->getElementData($component_key) ? 'true' : 'false');
+      }
+    }
+
     if ($entity_type) {
       $entity_storage = $this->entityTypeManager->getStorage($entity_type);
       $entity = $entity_storage->load($request_post_data['entity_id']);
