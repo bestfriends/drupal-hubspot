@@ -116,7 +116,7 @@ function hubspot_page_attachments(&$page) {
  * Creates library info with dynamic script file name.
  */
 function hubspot_library_info_build() {
-  $portal_id = \Drupal::config('hubspot.settings')->get('hubspot_portalid');
+  $portal_id = \Drupal::config('hubspot.settings')->get('hubspot_portal_id');
   $libraries = [];
   // Add a library whose information changes depending on certain conditions.
   $libraries['hubspot.code_tracking'] = [
