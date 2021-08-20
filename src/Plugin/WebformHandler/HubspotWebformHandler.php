@@ -179,7 +179,9 @@ class HubspotWebformHandler extends WebformHandlerBase {
       $hubspot_fields = $hubspot_forms[$hubspot_guid] ?? [];
       $options = ['--donotmap--' => 'Do Not Map'];
       foreach ($hubspot_fields['formFieldGroups'] as $hubspot_field) {
-        $options[$hubspot_field['fields'][0]['name']] = $hubspot_field['fields'][0]['label'];
+        foreach ($hubspot_field['fields'] as $field) {
+          $options[$field['name']] = $field['label'];
+        }
       }
 
       $components = $this->webform->getElementsInitializedAndFlattened();
