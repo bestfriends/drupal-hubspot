@@ -306,6 +306,8 @@ class HubspotWebformHandler extends WebformHandlerBase {
         'absolute' => TRUE,
       ])->toString();
     }
+
+    $context['pageUri'] = $page_url;
     $settings = $this->getSettings();
     $form_guid = $settings['form_guid'];
     $field_mapping = $settings['field_mapping'];
@@ -324,12 +326,13 @@ class HubspotWebformHandler extends WebformHandlerBase {
         else {
           // Not a composite element.
           $form_values[$hubspot_field] = $webform_values[$webform_path];
+
         }
       }
     }
 
     try {
-      $response = $this->hubspot->submitHubspotForm($form_guid, $form_values, $context, $request_body);
+      $response = $this->hubspot->submitHubspotForm($form_guid, $form_values, $context);
 
       // Debugging information.
       $config = $this->configFactory->get('hubspot.settings');
