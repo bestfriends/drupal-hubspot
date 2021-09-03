@@ -3,13 +3,17 @@
 namespace Drupal\hubspot\Plugin\WebformHandler;
 
 use Drupal\Component\Utility\NestedArray;
+use Drupal\Core\Ajax\AjaxResponse;
+use Drupal\Core\Ajax\RemoveCommand;
 use Drupal\Core\Form\FormStateInterface;
 use Drupal\Core\Link;
 use Drupal\Core\Url;
 use Drupal\webform\Plugin\WebformHandlerBase;
 use Drupal\webform\WebformSubmissionInterface;
+use SevenShores\Hubspot\Exceptions\BadRequest;
 use SevenShores\Hubspot\Exceptions\HubspotException;
 use Symfony\Component\DependencyInjection\ContainerInterface;
+use Symfony\Component\HttpFoundation\JsonResponse;
 
 /**
  * Webform submission remote post handler.
@@ -113,7 +117,7 @@ class HubspotWebformHandler extends WebformHandlerBase {
       '#ajax' => [
         'callback' => [$this, 'showWebformFields'],
         'event' => 'change',
-        'wrapper' => 'field_mapping_list',
+        'wrapper' => 'edit-settings-mapping-field-group-fields-wrapper',
       ],
     ];
 
@@ -130,37 +134,77 @@ class HubspotWebformHandler extends WebformHandlerBase {
 
     $form['mapping']['field_group']['fields'] = [
       '#type' => 'container',
-      '#prefix' => '<div id="field_mapping_list">',
+      '#prefix' => '<div id="edit-settings-mapping-field-group-fields-wrapper">',
       '#suffix' => '</div>',
       '#markup' => '',
     ];
 
     $form_values = $form_state->getValues();
 
+    // Generally, these elements cannot be submitted to HubSpot.
+    $exclude_elements = [
+      'webform_actions',
+      'webform_flexbox',
+      'webform_markup',
+      'webform_more',
+      'webform_section',
+      'webform_wizard_page',
+      'webform_message',
+      'webform_horizontal_rule',
+      'webform_terms_of_service',
+      'webform_computed_token',
+      'webform_computed_twig',
+      'webform_element',
+      'processed_text',
+      'captcha',
+      'container',
+      'details',
+      'fieldset',
+      'item',
+      'label',
+    ];
+
+    $consent_field_types = [
+      'checkbox',
+      'checkboxes',
+      'webform_terms_of_service',
+      'radios',
+      'select',
+    ];
+
+    $components = $this->webform->getElementsInitializedAndFlattened();
+    $webform_fields_options = [
+      '--donotmap--' => 'Do Not Map',
+    ];
+    $webform_consent_fields_options = [];
+
+    foreach ($components as $webform_field => $value) {
+      if (!in_array($value['#type'], $exclude_elements)) {
+        $key = $webform_field;
+        $title = (@$value['#title'] ?: $webform_field) . ' (' . $value['#type'] . ')';
+        if ($value['#webform_composite']) {
+          // Loop through a composite field to get all fields.
+          foreach ($value['#webform_composite_elements'] as $composite_field => $composite_value) {
+            $key = $webform_field . ':' . $composite_field;
+            $webform_fields_options[$key] = (@$value['#title'] . ': ' . $composite_value['#title'] ?: $key) . ' (' . $composite_value['#type'] . ')';
+          }
+        }
+        else {
+          $webform_fields_options[$webform_field] = (@$value['#title'] ?: $webform_field) . ' (' . $value['#type'] . ')';
+
+          if (in_array($value['#type'], $consent_field_types)) {
+            $webform_consent_fields_options[$webform_field] = (@$value['#title'] ?: $webform_field) . ' (' . $value['#type'] . ')';
+          }
+        }
+      }
+    }
+
+    if (empty($webform_consent_fields_options)) {
+      $webform_consent_fields_options['none'] = $this->t('No consent fields available.');
+    }
+
     // Apply default values if available.
     if (!empty($form_values['mapping']['hubspot_form']) || !empty($default_hubspot_guid)) {
-      // Generally, these elements cannot be submitted to HubSpot.
-      $exclude_elements = [
-        'webform_actions',
-        'webform_flexbox',
-        'webform_markup',
-        'webform_more',
-        'webform_section',
-        'webform_wizard_page',
-        'webform_message',
-        'webform_horizontal_rule',
-        'webform_terms_of_service',
-        'webform_computed_token',
-        'webform_computed_twig',
-        'webform_element',
-        'processed_text',
-        'captcha',
-        'container',
-        'details',
-        'fieldset',
-        'item',
-        'label',
-      ];
 
       if (!empty($form_values['mapping']['hubspot_form'])) {
         $hubspot_guid = $form_values['mapping']['hubspot_form'];
@@ -171,26 +215,6 @@ class HubspotWebformHandler extends WebformHandlerBase {
 
       $hubspot_form = $hubspot_forms[$hubspot_guid] ?? NULL;
       if ($hubspot_form) {
-        $components = $this->webform->getElementsInitializedAndFlattened();
-        $webform_fields_options = [
-          '--donotmap--' => 'Do Not Map',
-        ];
-
-        foreach ($components as $webform_field => $value) {
-          if (!in_array($value['#type'], $exclude_elements)) {
-            if ($value['#webform_composite']) {
-              // Loop through a composite field to get all fields.
-              foreach ($value['#webform_composite_elements'] as $composite_field => $composite_value) {
-                $key = $webform_field . ':' . $composite_field;
-                $webform_fields_options[$key] = (@$value['#title'] . ': ' . $composite_value['#title'] ?: $key) . ' (' . $composite_value['#type'] . ')';
-              }
-            }
-            else {
-              $webform_fields_options[$webform_field] = (@$value['#title'] ?: $webform_field) . ' (' . $value['#type'] . ')';
-            }
-          }
-        }
-
         foreach ($hubspot_form->formFieldGroups as $fieldGroup) {
           foreach ($fieldGroup->fields as $field) {
             $form['mapping']['field_group']['fields'][$field->name] = [
@@ -205,7 +229,286 @@ class HubspotWebformHandler extends WebformHandlerBase {
         }
       }
     }
+
+    $form['legal_consent'] = [
+      '#type' => 'fieldset',
+      '#title' => $this->t('Legal Consent'),
+      'include' => [
+        '#type' => 'select',
+        '#title' => $this->t('Include Legal Consent status'),
+        '#options' => [
+          'never' => $this->t('Never'),
+          'always' => $this->t('Always'),
+          'conditionally' => $this->t('Conditionally'),
+        ],
+        '#parents' => [
+          'settings',
+          'legal_consent',
+          'include',
+        ],
+      ],
+      'source' => [
+        '#type' => 'container',
+        '#prefix' => '<div id="edit-settings-legal-consent-source-wrapper">',
+        '#suffix' => '</div>',
+        'element' => [
+          '#type' => 'select',
+          '#title' => 'Source Element',
+          '#states' => [
+            'visible' => [
+              '#edit-settings-legal-consent-include' => [
+                'value' => 'conditionally',
+              ],
+            ],
+          ],
+          '#parents' => [
+            'settings',
+            'legal_consent',
+            'source',
+            'element',
+          ],
+          '#empty_option' => $this->t('Select'),
+          '#options' => $webform_consent_fields_options,
+          '#ajax' => [
+            'callback' => [$this, 'updateLegalConsentSource'],
+            'event' => 'change',
+            'wrapper' => 'edit-settings-legal-consent-source-wrapper',
+          ],
+        ],
+      ],
+    ];
+
+    if (
+      !empty($form_values['legal_consent']['include'])
+      && !empty($form_values['legal_consent']['source']['element'])
+      && isset($components[$form_values['legal_consent']['source']['element']])
+      && isset($components[$form_values['legal_consent']['source']['element']]['#options'])
+    ) {
+      $form['legal_consent']['source']['option'] = [
+        '#type' => 'select',
+        '#title' => 'Source Value',
+        '#states' => [
+          'visible' => [
+            '#edit-settings-legal-consent-include' => [
+              'value' => 'conditionally',
+            ],
+          ],
+        ],
+        '#parents' => [
+          'settings',
+          'legal_consent',
+          'source',
+          'option',
+        ],
+        '#options' => $components[$form_values['legal_consent']['source']['element']]['#options'],
+      ];
+    }
+
+    $form['subscriptions'] = [
+      '#type' => 'fieldset',
+      '#title' => $this->t('Subscriptions'),
+    ];
+    try {
+      $available_subscriptions = $this->hubspot->hubspotGetSubscriptions();
+      $subscription_options = [];
+      foreach ($available_subscriptions as $subscription) {
+        $subscription_options[$subscription->id] = $subscription->name;
+      }
+      $form_state->addBuildInfo('subscription_options', $subscription_options);
+      $form_state->addBuildInfo('webform_consent_fields_options', $webform_consent_fields_options);
+
+      if (empty($subscription_options)) {
+        $form['subscriptions']['notice'] = [
+          '#type' => 'item',
+          '#markup' => $this->t('No subscriptions available.'),
+        ];
+      }
+      else {
+        $form['subscriptions']['mapping'] = [
+          '#type' => 'table',
+          '#prefix' => '<div id="edit-settings-subscriptions-mapping-wrapper">',
+          '#suffix' => '</div>',
+          '#header' => [
+            $this->t('Subscription'),
+            $this->t('Mapping'),
+            $this->t('Actions'),
+          ],
+          '#empty' => $this->t('No configured subscriptions'),
+        ];
+        $subscriptions = $form_values['subscriptions']['mapping'] ?? $settings['subscriptions'] ?? [];
+        if ($subscriptions === '') {
+          $subscriptions = [];
+        }
+        $form['subscriptions']['add'] = [
+          '#type' => 'button',
+          '#value' => $this->t('Add Subscription'),
+          '#ajax' => [
+            'callback' => [$this, 'addSubscription'],
+            'event' => 'click',
+            'wrapper' => 'edit-settings-subscriptions-mapping-wrapper',
+          ],
+          '#parents' => [
+            'settings',
+            'subscriptions',
+            'add',
+          ],
+        ];
+        if ($form_state->getTriggeringElement() && $form_state->getTriggeringElement()['#parents'] == $form['subscriptions']['add']['#parents']) {
+          $subscriptions[] = [];
+        }
+        foreach ($subscriptions as $key => $subscription) {
+          $form['subscriptions']['mapping'][$key] = $this->buildSubscriptionRow($key, $subscription_options, $webform_consent_fields_options, $subscription);
+        }
+      }
+    }
+    catch (BadRequest $e) {
+      $form['subscriptions']['notice'] = [
+        '#type' => 'item',
+        '#markup' => $this->t('Unable to load Email Subscription Types. Please re-authorize the integration.'),
+      ];
+    }
+
     return $form;
+  }
+
+  /**
+   * Build row for the subscription table.
+   *
+   * @param mixed $index
+   *   THe row id.
+   * @param array $subscription_options
+   *   The subscription options.
+   * @param array $default_values
+   *   The configured values.
+   *
+   * @return array
+   *   Render array for the row.
+   */
+  protected function buildSubscriptionRow($index, array $subscription_options, array $webform_consent_fields_options, array $default_values = []): array {
+    $row = [
+      '#attributes' => [
+        'id' => 'edit-settings-subscriptions-mapping-' . $index,
+      ],
+      'subscription' => [
+        '#type' => 'select',
+        '#title' => $this->t('Subscription Name'),
+        '#title_display' => 'invisible',
+        '#empty_option' => $this->t('Select'),
+        '#required' => TRUE,
+        '#options' => $subscription_options,
+        '#parents' => [
+          'settings',
+          'subscriptions',
+          'mapping',
+          $index,
+          'subscription',
+        ],
+      ],
+      'mapping' => [
+        '#type' => 'container',
+        '#prefix' => '<div id="edit-settings-subscriptions-mapping-' . $index . '-mapping-wrapper">',
+        '#suffix' => '</div>',
+        'include' => [
+          '#type' => 'select',
+          '#title' => 'Include',
+          '#options' => [
+            'always' => $this->t('Always'),
+            'conditionally' => $this->t('Conditionally'),
+          ],
+          '#ajax' => [
+            'callback' => [$this, 'updateSubscriptionSource'],
+            'event' => 'change',
+            'wrapper' => 'edit-settings-subscriptions-mapping-' . $index . '-mapping-wrapper',
+          ],
+          '#required' => TRUE,
+          '#parents' => [
+            'settings',
+            'subscriptions',
+            'mapping',
+            $index,
+            'mapping',
+            'include',
+          ],
+        ],
+      ],
+      'remove' => [
+        '#type' => 'button',
+        '#value' => $this->t('Remove'),
+        '#ajax' => [
+          'callback' => [$this, 'removeSubscription'],
+          'event' => 'click',
+          'wrapper' => 'edit-settings-legal-consent-source-wrapper',
+        ],
+        '#parents' => [
+          'settings',
+          'subscriptions',
+          'mapping',
+          $index,
+          'remove',
+        ],
+      ],
+    ];
+
+    $components = $this->webform->getElementsInitializedAndFlattened();
+
+    if ($default_values['mapping']['include'] == 'conditionally') {
+      $row['mapping']['element'] = [
+        '#type' => 'select',
+        '#title' => $this->t('Element'),
+        '#states' => [
+          'visible' => [
+            '#edit-settings-subscriptions-mapping-' . $index . '-mapping-include' => [
+              'value' => 'conditionally',
+            ],
+          ],
+        ],
+        '#required' => TRUE,
+        '#empty_option' => $this->t('Select'),
+        '#options' => $webform_consent_fields_options,
+        '#ajax' => [
+          'callback' => [$this, 'updateSubscriptionSource'],
+          'event' => 'change',
+          'wrapper' => 'edit-settings-subscriptions-mapping-' . $index . '-mapping-wrapper',
+        ],
+        '#parents' => [
+          'settings',
+          'subscriptions',
+          'mapping',
+          $index,
+          'mapping',
+          'element',
+        ],
+      ];
+
+      if (!empty($default_values['mapping']['element'])
+        && isset($components[$default_values['mapping']['element']])
+        && isset($components[$default_values['mapping']['element']]['#options'])
+      ) {
+        $row['mapping']['value'] = [
+          '#type' => 'select',
+          '#title' => $this->t('Value'),
+          '#required' => TRUE,
+          '#states' => [
+            'visible' => [
+              '#edit-settings-subscriptions-mapping-' . $index . '-include' => [
+                'value' => 'conditionally',
+              ],
+            ],
+          ],
+          '#options' => $components[$default_values['mapping']['element']]['#options'],
+          '#parents' => [
+            'settings',
+            'subscriptions',
+            'mapping',
+            $index,
+            'mapping',
+            'option',
+          ],
+        ];
+      }
+    }
+
+    return $row;
   }
 
   /**
@@ -224,6 +527,78 @@ class HubspotWebformHandler extends WebformHandlerBase {
   }
 
   /**
+   * AJAX callback for hubspot form change event.
+   *
+   * @param array $form
+   *   Active form array.
+   * @param \Drupal\Core\Form\FormStateInterface $form_state
+   *   Active form state.
+   *
+   * @return array
+   *   Render array.
+   */
+  public function updateLegalConsentSource(array $form, FormStateInterface $form_state): array {
+    return $form['settings']['legal_consent']['source'];
+  }
+
+  /**
+   * AJAX callback for hubspot form change event.
+   *
+   * @param array $form
+   *   Active form array.
+   * @param \Drupal\Core\Form\FormStateInterface $form_state
+   *   Active form state.
+   *
+   * @return array
+   *   Render array.
+   */
+  public function addSubscription(array $form, FormStateInterface $form_state): array {
+    return $form['settings']['subscriptions']['mapping'];
+  }
+
+  /**
+   * Ajax call back for removing subscription mapping row.
+   *
+   * @param array $form
+   *   Drupal form render array.
+   * @param \Drupal\Core\Form\FormStateInterface $form_state
+   *   Drupal form state for ajax callback.
+   *
+   * @return mixed
+   *   Drupal ajax response.
+   */
+  public function removeSubscription(array &$form, FormStateInterface $form_state) {
+    $trigger = $form_state->getTriggeringElement();
+
+    $element_path = $trigger['#parents'];
+    array_pop($element_path);
+    $selector = '#edit-' . implode('-', $element_path);
+    $response = new AjaxResponse();
+    $response->addCommand(new RemoveCommand($selector));
+    return $response;
+  }
+
+  /**
+   * Ajax call back for removing subscription mapping row.
+   *
+   * @param array $form
+   *   Drupal form render array.
+   * @param \Drupal\Core\Form\FormStateInterface $form_state
+   *   Drupal form state for ajax callback.
+   *
+   * @return mixed
+   *   Drupal ajax response.
+   */
+  public function updateSubscriptionSource(array &$form, FormStateInterface $form_state) {
+    $trigger = $form_state->getTriggeringElement();
+
+    $element_path = $trigger['#parents'];
+    array_pop($element_path);
+    $elem = NestedArray::getValue($form, $element_path);
+    return $elem;
+  }
+
+  /**
    * {@inheritdoc}
    */
   public function submitConfigurationForm(array &$form, FormStateInterface $form_state) {
@@ -231,8 +606,10 @@ class HubspotWebformHandler extends WebformHandlerBase {
       return;
     }
 
-    $hubspot_id = $form_state->getValues()['mapping']['hubspot_form'];
-    $fields = $form_state->getValues()['mapping']['field_group']['fields'];
+    $form_values = $form_state->getValues();
+
+    $hubspot_id = $form_values['mapping']['hubspot_form'];
+    $fields = $form_values['mapping']['field_group']['fields'];
 
     $settings = [];
 
@@ -244,6 +621,13 @@ class HubspotWebformHandler extends WebformHandlerBase {
       });
       $this->messenger()->addMessage($this->t('Saved new field mapping.'));
     }
+
+    $settings['legal_consent'] = $form_values['legal_consent'];
+    if ($settings['legal_consent']['include'] != 'conditionally') {
+      unset($settings['legal_consent']['source']);
+    }
+
+    $settings['subscriptions'] = $form_values['subscriptions']['mapping'];
 
     $this->setSettings($settings);
   }
@@ -342,6 +726,42 @@ class HubspotWebformHandler extends WebformHandlerBase {
           // Not a composite element.
           $form_values[$hubspot_field] = $webform_values[$webform_path];
 
+        }
+      }
+    }
+
+    $request_body = [];
+    if (isset($settings['legal_consent']) && $settings['legal_consent']['include'] != 'never') {
+      if (
+        $settings['legal_consent']['include'] == 'always'
+        || (
+          in_array($elements[$settings['legal_consent']['source']['element']]['#type'], [
+            'checkbox',
+            'webform_terms_of_service',
+          ]) && $form_values[$settings['legal_consent']['source']['element']] == 1)
+        || $webform_values[$settings['legal_consent']['source']['element']] == $settings['legal_consent']['source']['option']
+      ) {
+        $request_body['consent']['consentToProcess'] = TRUE;
+        $request_body['consent']['text'] = $elements[$settings['legal_consent']['source']['element']]['#title'];
+      }
+    }
+
+    if (isset($settings['subscriptions'])) {
+      foreach ($settings['subscriptions'] as $subscription) {
+        if (
+          $subscription['include'] == 'always'
+          || (
+            in_array($elements[$subscription['mapping']['element']]['#type'], [
+              'checkbox',
+              'webform_terms_of_service',
+            ]) && $form_values[$subscription['mapping']['element']] == 1)
+          || $webform_values[$subscription['mapping']['element']] == $subscription['mapping']['option']
+        ) {
+          $request_body['consent']['communications'][] = [
+            'value' => TRUE,
+            'subscriptionTypeId' => $subscription['subscription'],
+            'text' => 'I agree to receive marketing communications on products, services, and events from Dixon Valve.',
+          ];
         }
       }
     }

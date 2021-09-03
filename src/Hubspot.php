@@ -292,4 +292,23 @@ class Hubspot {
     ]);
   }
 
+  /**
+   * Load hubspot email Subscriptions.
+   *
+   * @return array
+   *   The hubspot Subscriptions.
+   */
+  public function hubspotGetSubscriptions(): array {
+
+    static $subscriptions;
+
+    if (!isset($subscriptions)) {
+      $response = $this->getHubspotClient()->emailSubscription()->subscriptions();
+
+      $subscriptions = $response->data->subscriptionDefinitions ?? [];
+    }
+
+    return $subscriptions;
+  }
+
 }
