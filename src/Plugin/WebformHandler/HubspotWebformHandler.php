@@ -738,7 +738,7 @@ class HubspotWebformHandler extends WebformHandlerBase {
           in_array($elements[$settings['legal_consent']['source']['element']]['#type'], [
             'checkbox',
             'webform_terms_of_service',
-          ]) && $form_values[$settings['legal_consent']['source']['element']] == 1)
+          ]) && $webform_values[$settings['legal_consent']['source']['element']] == 1)
         || $webform_values[$settings['legal_consent']['source']['element']] == $settings['legal_consent']['source']['option']
       ) {
         $request_body['consent']['consentToProcess'] = TRUE;
@@ -754,7 +754,7 @@ class HubspotWebformHandler extends WebformHandlerBase {
             in_array($elements[$subscription['mapping']['element']]['#type'], [
               'checkbox',
               'webform_terms_of_service',
-            ]) && $form_values[$subscription['mapping']['element']] == 1)
+            ]) && $webform_values[$subscription['mapping']['element']] == 1)
           || $webform_values[$subscription['mapping']['element']] == $subscription['mapping']['option']
         ) {
           $request_body['consent']['communications'][] = [
@@ -767,7 +767,7 @@ class HubspotWebformHandler extends WebformHandlerBase {
     }
 
     try {
-      $response = $this->hubspot->submitHubspotForm($form_guid, $form_values, $context);
+      $response = $this->hubspot->submitHubspotForm($form_guid, $form_values, $context, $request_body);
 
       // Debugging information.
       $config = $this->configFactory->get('hubspot.settings');
