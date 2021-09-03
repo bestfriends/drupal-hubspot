@@ -742,14 +742,14 @@ class HubspotWebformHandler extends WebformHandlerBase {
         || $webform_values[$settings['legal_consent']['source']['element']] == $settings['legal_consent']['source']['option']
       ) {
         $request_body['consent']['consentToProcess'] = TRUE;
-        $request_body['consent']['text'] = $elements[$settings['legal_consent']['source']['element']]['#title'];
+        $request_body['consent']['text'] = $settings['legal_consent']['include'] == 'always' ? $this->t('I agree') : $elements[$settings['legal_consent']['source']['element']]['#title'];
       }
     }
 
     if (isset($settings['subscriptions'])) {
       foreach ($settings['subscriptions'] as $subscription) {
         if (
-          $subscription['include'] == 'always'
+          $subscription['mapping']['include'] == 'always'
           || (
             in_array($elements[$subscription['mapping']['element']]['#type'], [
               'checkbox',
@@ -760,7 +760,7 @@ class HubspotWebformHandler extends WebformHandlerBase {
           $request_body['consent']['communications'][] = [
             'value' => TRUE,
             'subscriptionTypeId' => $subscription['subscription'],
-            'text' => 'I agree to receive marketing communications on products, services, and events from Dixon Valve.',
+            'text' => $subscription['mapping']['include'] == 'always' ? $this->t('I agree') : $elements[$subscription['mapping']['element']]['#title'],
           ];
         }
       }
