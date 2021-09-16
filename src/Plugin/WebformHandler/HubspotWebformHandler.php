@@ -741,8 +741,8 @@ class HubspotWebformHandler extends WebformHandlerBase {
           ]) && $webform_values[$settings['legal_consent']['source']['element']] == 1)
         || $webform_values[$settings['legal_consent']['source']['element']] == $settings['legal_consent']['source']['option']
       ) {
-        $request_body['consent']['consentToProcess'] = TRUE;
-        $request_body['consent']['text'] = $settings['legal_consent']['include'] == 'always' ? $this->t('I agree') : $elements[$settings['legal_consent']['source']['element']]['#title'];
+        $request_body['legalConsentOptions']['consent']['consentToProcess'] = TRUE;
+        $request_body['legalConsentOptions']['consent']['text'] = $settings['legal_consent']['include'] == 'always' ? $this->t('I agree') : $elements[$settings['legal_consent']['source']['element']]['#title'];
       }
     }
 
@@ -757,7 +757,7 @@ class HubspotWebformHandler extends WebformHandlerBase {
             ]) && $webform_values[$subscription['mapping']['element']] == 1)
           || $webform_values[$subscription['mapping']['element']] == $subscription['mapping']['option']
         ) {
-          $request_body['consent']['communications'][] = [
+          $request_body['legalConsentOptions']['consent']['communications'][] = [
             'value' => TRUE,
             'subscriptionTypeId' => $subscription['subscription'],
             'text' => $subscription['mapping']['include'] == 'always' ? $this->t('I agree') : $elements[$subscription['mapping']['element']]['#title'],
