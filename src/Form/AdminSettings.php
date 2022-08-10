@@ -88,7 +88,7 @@ class AdminSettings extends ConfigFormBase {
       '#type' => 'textfield',
       '#required' => TRUE,
       '#default_value' => $config->get('hubspot_portal_id'),
-      '#description' => $this->t('Enter the HubSpot Portal ID for this site. <a href=":url" target="_blank">How do I find my portal ID?</a>.', [
+      '#description' => $this->t('Enter the HubSpot Portal ID for this site. <a href="@url" target="_blank">How do I find my portal ID?</a>.', [
         '@url' => 'https://knowledge.hubspot.com/articles/kcs_article/account/where-can-i-find-my-hub-id',
       ]),
     ];
