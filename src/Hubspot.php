@@ -251,13 +251,15 @@ class Hubspot {
     // Convert list values into semicolon separated lists.
     $formatted_form_values = [];
     foreach ($form_field_values as $field_name => $field_value) {
-      if (is_array($field_value)) {
-        $field_value = implode(';', $field_value);
+      if ($field_value) {
+        if (is_array($field_value)) {
+          $field_value = implode(';', $field_value);
+        }
+        $formatted_form_values[] = [
+          'name' => $field_name,
+          'value' => $field_value,
+        ];
       }
-      $formatted_form_values[] = [
-        'name' => $field_name,
-        'value' => $field_value,
-      ];
     }
 
     $request_body += [
