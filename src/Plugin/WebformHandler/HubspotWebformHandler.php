@@ -76,7 +76,7 @@ class HubspotWebformHandler extends WebformHandlerBase {
         '#type' => 'item',
         '#title' => $this->t('Notice'),
         '#markup' => $this->t('Your site account is not connected to a Hubspot account, please @admin_link first.', [
-          '@admin_link' => Link::createFromRoute('connect to Hubspot', 'hubspot.admin_settings'),
+          '@admin_link' => Link::createFromRoute('connect to Hubspot', 'hubspot.admin_settings')->toString(),
         ]),
       ];
       return $form;
