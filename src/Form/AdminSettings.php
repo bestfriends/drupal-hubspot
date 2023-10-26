@@ -232,7 +232,9 @@ class AdminSettings extends ConfigFormBase {
       'query' => [
         'client_id' => $config
           ->get('hubspot_client_id'),
-        'redirect_uri' => $base_url . Url::fromRoute('hubspot.oauth_connect')->toString(),
+        'redirect_uri' => $base_url . Url::fromRoute('hubspot.oauth_connect', [], [
+            'absolute' => TRUE,
+          ])->toString(),
         'scope' => $config
           ->get('hubspot_scope'),
       ],
