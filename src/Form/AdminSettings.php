@@ -227,12 +227,11 @@ class AdminSettings extends ConfigFormBase {
    */
   public function hubspotOauthSubmitForm(array &$form, FormStateInterface $form_state): RedirectResponse {
     $config = $this->config(static::SETTINGS);
-    global $base_url;
     $options = [
       'query' => [
         'client_id' => $config
           ->get('hubspot_client_id'),
-        'redirect_uri' => $base_url . Url::fromRoute('hubspot.oauth_connect', [], [
+        'redirect_uri' => Url::fromRoute('hubspot.oauth_connect', [], [
             'absolute' => TRUE,
           ])->toString(),
         'scope' => $config
