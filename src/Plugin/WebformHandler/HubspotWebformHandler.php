@@ -222,9 +222,9 @@ class HubspotWebformHandler extends WebformHandlerBase {
               '#type' => 'select',
               '#options' => $webform_fields_options,
             ];
-          }
-          if (isset($settings['field_mapping'][$field->name])) {
-            $form['mapping']['field_group']['fields'][$field->name]['#default_value'] = $settings['field_mapping'][$field->name];
+            if (isset($settings['field_mapping'][$field->name])) {
+              $form['mapping']['field_group']['fields'][$field->name]['#default_value'] = $settings['field_mapping'][$field->name];
+            }
           }
         }
       }
@@ -627,8 +627,7 @@ class HubspotWebformHandler extends WebformHandlerBase {
       unset($settings['legal_consent']['source']);
     }
 
-    $settings['subscriptions'] = $form_values['subscriptions']['mapping'];
-
+    $settings['subscriptions'] = $form_values['subscriptions']['mapping'] ?? [];
     $this->setSettings($settings);
   }
 
