@@ -10,6 +10,7 @@ use Drupal\Core\Link;
 use Drupal\Core\Url;
 use Drupal\webform\Plugin\WebformHandlerBase;
 use Drupal\webform\WebformSubmissionInterface;
+use Drupal\Core\Utility\Error;
 use SevenShores\Hubspot\Exceptions\BadRequest;
 use SevenShores\Hubspot\Exceptions\HubspotException;
 use Symfony\Component\DependencyInjection\ContainerInterface;
@@ -50,6 +51,13 @@ class HubspotWebformHandler extends WebformHandlerBase {
   protected $hubspot;
 
   /**
+   * The logger.
+   *
+   * @var \Drupal\Core\Logger\LoggerChannelInterface
+   */
+  protected $logger;
+
+  /**
    * {@inheritdoc}
    */
   public static function create(ContainerInterface $container, array $configuration, $plugin_id, $plugin_definition) {
@@ -58,6 +66,7 @@ class HubspotWebformHandler extends WebformHandlerBase {
     $instance->entityTypeManager = $container->get('entity_type.manager');
     $instance->mailManager = $container->get('plugin.manager.mail');
     $instance->hubspot = $container->get('hubspot.hubspot');
+    $instance->logger = $instance->loggerFactory->get('hubspot');
     return $instance;
   }
 
@@ -826,12 +835,12 @@ class HubspotWebformHandler extends WebformHandlerBase {
         $data = (string) $response->getBody();
 
         if ($response->getStatusCode() == '200' || $response->getStatusCode() == '204') {
-          $this->loggerFactory->get('HubSpot')->notice('Webform "@form" results successfully submitted to HubSpot.', [
+          $this->logger->notice('Webform "@form" results successfully submitted to HubSpot.', [
             '@form' => $form_title,
           ]);
         }
         else {
-          $this->loggerFactory->get('HubSpot')->notice('HTTP notice when submitting HubSpot data from Webform "@form". @code: <pre>@msg</pre>', [
+          $this->logger->notice('HTTP notice when submitting HubSpot data from Webform "@form". @code: <pre>@msg</pre>', [
             '@form' => $form_title,
             '@code' => $response->getStatusCode(),
             '@msg' => $response->getBody()->getContents(),
@@ -847,18 +856,18 @@ class HubspotWebformHandler extends WebformHandlerBase {
         }
       }
       else {
-        $this->loggerFactory->get('HubSpot')->notice('HTTP error when submitting HubSpot data from Webform "@form": <pre>@msg</pre>', [
+        $this->logger->notice('HTTP error when submitting HubSpot data from Webform "@form": <pre>@msg</pre>', [
           '@form' => $form_title,
           '@msg' => 'No response returned from Hubspot Client',
         ]);
       }
     }
     catch (HubspotException $e) {
-      $this->loggerFactory->get('HubSpot')->notice('HTTP error when submitting HubSpot data from Webform "@form": <pre>@error</pre>', [
+      $this->logger->notice('HTTP error when submitting HubSpot data from Webform "@form": <pre>@error</pre>', [
         '@form' => $form_title,
         '@error' => $e->getResponse()->getBody()->getContents(),
       ]);
-      watchdog_exception('HubSpot', $e);
+      Error::logException($this->logger, $e);
     }
 
   }

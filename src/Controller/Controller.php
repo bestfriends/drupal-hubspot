@@ -4,6 +4,8 @@ namespace Drupal\hubspot\Controller;
 
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Controller\ControllerBase;
+use Drupal\Core\Logger\LoggerChannelFactoryInterface;
+use Drupal\Core\Utility\Error;
 use Drupal\hubspot\Hubspot;
 use GuzzleHttp\Exception\RequestException;
 use Symfony\Component\DependencyInjection\ContainerInterface;
@@ -14,6 +16,13 @@ use Symfony\Component\HttpFoundation\RequestStack;
  * Default controller for the hubspot module.
  */
 class Controller extends ControllerBase {
+
+  /**
+   * The logger.
+   *
+   * @var \Drupal\Core\Logger\LoggerChannelInterface
+   */
+  protected $logger;
 
   /**
    * Hubspot configuration.
@@ -46,7 +55,13 @@ class Controller extends ControllerBase {
    * @param \Drupal\hubspot\Hubspot $hubspot
    *   The hubspot api client service.
    */
-  public function __construct(ConfigFactoryInterface $config_factory, RequestStack $request_stack, Hubspot $hubspot) {
+  public function __construct(
+    LoggerChannelFactoryInterface $logger_factory,
+    ConfigFactoryInterface $config_factory,
+    RequestStack $request_stack,
+    Hubspot $hubspot
+  ) {
+    $this->logger = $logger_factory->get('hubspot');
     $this->config = $config_factory->getEditable('hubspot.settings');
     $this->request = $request_stack->getCurrentRequest();
     $this->hubspot = $hubspot;
@@ -57,6 +72,7 @@ class Controller extends ControllerBase {
    */
   public static function create(ContainerInterface $container) {
     return new static(
+      $container->get('logger.factory'),
       $container->get('config.factory'),
       $container->get('request_stack'),
       $container->get('hubspot.hubspot')
@@ -80,7 +96,7 @@ class Controller extends ControllerBase {
         $this->messenger()->addStatus($this->t('Successfully authenticated with HubSpot.'), FALSE);
       }
       catch (RequestException $e) {
-        watchdog_exception('Hubspot', $e);
+        Error::logException($this->logger, $e);
       }
     }
     if (($error = $this->request->get('error')) && $error == 'access_denied') {
