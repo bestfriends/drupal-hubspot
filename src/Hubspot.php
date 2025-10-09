@@ -144,7 +144,7 @@ class Hubspot {
 
     if (!$this->hubspotClient) {
       $access_token = $this->state->get('hubspot.hubspot_access_token');
-      $this->hubspotClient = HubspotClientFactory::createWithOAuth2Token($access_token);
+      $this->hubspotClient = HubspotClientFactory::createWithAccessToken($access_token);
     }
     return $this->hubspotClient;
   }
