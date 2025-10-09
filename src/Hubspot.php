@@ -3,17 +3,19 @@
 namespace Drupal\hubspot;
 
 use Drupal\Core\Config\ConfigFactoryInterface;
+use Drupal\Core\Entity\EntityInterface;
 use Drupal\Core\Logger\LoggerChannelFactoryInterface;
 use Drupal\Core\Mail\MailManagerInterface;
 use Drupal\Core\State\StateInterface;
-use Drupal\Core\Url;
-use GuzzleHttp\ClientInterface;
 use Drupal\Core\StringTranslation\StringTranslationTrait;
-use SevenShores\Hubspot\Http\Response;
-use Symfony\Component\HttpFoundation\RequestStack;
-
+use Drupal\Core\Url;
+use Drupal\file\FileInterface;
+use GuzzleHttp\ClientInterface;
+use SevenShores\Hubspot\Exceptions\HubspotException;
 use SevenShores\Hubspot\Factory as HubspotClientFactory;
+use SevenShores\Hubspot\Http\Response;
 use SevenShores\Hubspot\Utils\OAuth2 as HubspotOAuthHelper;
+use Symfony\Component\HttpFoundation\RequestStack;
 
 /**
  * Define a service for interacting with the HubSpot CRM.
@@ -251,6 +253,34 @@ class Hubspot {
     // Convert list values into semicolon separated lists.
     $formatted_form_values = [];
     foreach ($form_field_values as $field_name => $field_value) {
+
+      if ($field_value instanceof EntityInterface) {
+        $entity = $field_value;
+        if ($entity instanceof FileInterface) {
+          // Upload files via the hubpsot client, and update value to reference file.
+          $file_uri = $entity->getFileUri();
+          $file_path = \Drupal::service('file_system')->realpath($file_uri);
+          try {
+            $hubspot_upload_response = $this->getHubspotClient()->files()->upload($file_path);
+            foreach ($hubspot_upload_response->objects as $file) {
+              $field_value = $file->url;
+            }
+          }
+          catch (HubspotException $e) {
+            $this->logger->notice('Unable to upload @file to HubSpot "@error". @code: <pre>@msg</pre>', [
+              '@file' => $file->label(),
+              '@error' => $e->getMessage(),
+            ]);
+            // Move on to next field.
+            continue;
+          }
+        }
+        else {
+        // Convert Entities to labels if supplied as a value.
+          $field_value = $entity->label();
+        }
+      }
+
       if ($field_value) {
         if (is_array($field_value)) {
           $field_value = implode(';', $field_value);

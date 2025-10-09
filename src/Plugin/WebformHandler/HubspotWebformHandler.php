@@ -13,7 +13,6 @@ use Drupal\webform\WebformSubmissionInterface;
 use SevenShores\Hubspot\Exceptions\BadRequest;
 use SevenShores\Hubspot\Exceptions\HubspotException;
 use Symfony\Component\DependencyInjection\ContainerInterface;
-use Symfony\Component\HttpFoundation\JsonResponse;
 
 /**
  * Webform submission remote post handler.
@@ -765,6 +764,14 @@ class HubspotWebformHandler extends WebformHandlerBase {
           // Not a composite element.
           $form_values[$hubspot_field] = $webform_values[$webform_path];
 
+        }
+
+        if (in_array($elements[$webform_path]['#type'], ['managed_file', 'webform_document_file'])) {
+          /** @var \Drupal\file\Entity\File */
+          $file = $this->entityTypeManager->getStorage('file')->load($webform_values[$webform_path]);
+          if ($file) {
+            $form_values[$hubspot_field] = $file;
+          }
         }
       }
     }
