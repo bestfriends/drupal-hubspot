@@ -3,5 +3,5 @@ tracking_code_on: 0
 hubspot_portal_id: ''
 hubspot_client_id: ''
 hubspot_client_secret: ''
-hubspot_scope: 'contacts forms oauth'
+hubspot_scope: 'crm.objects.contacts.write forms oauth'
 hubspot_debug_email: ''
