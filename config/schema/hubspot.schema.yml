@@ -6,3 +6,57 @@ hubspot.settings:
       type: integer
     tracking_code_on:
       type: integer
+
+webform.handler.hubspot_webform_handler:
+  type: mapping
+  label: 'Hubspot Webform handler'
+  mapping:
+    form_guid:
+      label: 'Form GUID'
+      type: string
+    field_mapping:
+      type: sequence
+      label: 'Field mapping'
+      sequence:
+        type: string
+        label: 'Field mapping'
+    legal_consent:
+      type: mapping
+      label: 'Legal consent'
+      mapping:
+        include:
+          type: string
+          label: Include
+        source:
+          type: mapping
+          label: Source
+          mapping:
+            element:
+              type: string
+              label: Element
+            option:
+              type: string
+              label: Option
+    subscriptions:
+      type: sequence
+      label: Subscriptions
+      sequence:
+        type: mapping
+        label: Subscription
+        mapping:
+          subscription:
+            type: string
+            label: ID
+          mapping:
+            type: mapping
+            label: Mapping
+            mapping:
+              include:
+                type: string
+                label: Include
+              element:
+                type: string
+                label: Element
+              option:
+                type: string
+                label: Option
