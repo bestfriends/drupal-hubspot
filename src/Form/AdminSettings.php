@@ -2,7 +2,6 @@
 
 namespace Drupal\hubspot\Form;
 
-use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Form\ConfigFormBase;
 use Drupal\Core\Form\FormStateInterface;
 use Drupal\Core\State\StateInterface;
@@ -29,29 +28,16 @@ class AdminSettings extends ConfigFormBase {
    *
    * @var \Drupal\Core\State\StateInterface
    */
-  protected $state;
-
-  /**
-   * Constructs a new AdminSettings object.
-   *
-   * @param \Drupal\Core\Config\ConfigFactoryInterface $config_factory
-   *   The factory for configuration objects.
-   * @param \Drupal\Core\State\StateInterface $state
-   *   The state key/value store.
-   */
-  public function __construct(ConfigFactoryInterface $config_factory, StateInterface $state) {
-    parent::__construct($config_factory);
-    $this->state = $state;
-  }
+  protected StateInterface $state;
 
   /**
    * {@inheritdoc}
    */
   public static function create(ContainerInterface $container) {
-    return new static(
-      $container->get('config.factory'),
-      $container->get('state')
-    );
+    $instance = parent::create($container);
+    $instance->state = $container->get('state');
+
+    return $instance;
   }
 
   /**
