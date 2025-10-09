@@ -264,12 +264,16 @@ class Hubspot {
             $hubspot_upload_response = $this->getHubspotClient()->files()->upload($file_path);
             foreach ($hubspot_upload_response->objects as $file) {
               $field_value = $file->url;
+              $this->logger->notice('Uploaded file @file to HubSpot at <pre>@path</pre>', [
+                '@file' => $entity->label(),
+                '@path' => $file->url,
+              ]);
             }
           }
           catch (HubspotException $e) {
-            $this->logger->notice('Unable to upload @file to HubSpot "@error". @code: <pre>@msg</pre>', [
-              '@file' => $file->label(),
-              '@error' => $e->getMessage(),
+            $this->logger->error('Unable to upload @file to HubSpot: <pre>@msg</pre>', [
+              '@file' => $entity->label(),
+              '@msg' => $e->getMessage(),
             ]);
             // Move on to next field.
             continue;
