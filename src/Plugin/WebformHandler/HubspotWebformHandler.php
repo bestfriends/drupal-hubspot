@@ -241,6 +241,7 @@ class HubspotWebformHandler extends WebformHandlerBase {
           'always' => $this->t('Always'),
           'conditionally' => $this->t('Conditionally'),
         ],
+        '#default_value' => $settings['legal_consent']['include'] ?? NULL,
         '#parents' => [
           'settings',
           'legal_consent',
@@ -249,13 +250,17 @@ class HubspotWebformHandler extends WebformHandlerBase {
       ],
       'source' => [
         '#type' => 'container',
-        '#prefix' => '<div id="edit-settings-legal-consent-source-wrapper">',
-        '#suffix' => '</div>',
         'element' => [
           '#type' => 'select',
           '#title' => 'Source Element',
+          '#default_value' => $settings['legal_consent']['source']['element'] ?? NULL,
           '#states' => [
             'visible' => [
+              '#edit-settings-legal-consent-include' => [
+                'value' => 'conditionally',
+              ],
+            ],
+            'required' => [
               '#edit-settings-legal-consent-include' => [
                 'value' => 'conditionally',
               ],
@@ -267,41 +272,76 @@ class HubspotWebformHandler extends WebformHandlerBase {
             'source',
             'element',
           ],
-          '#empty_option' => $this->t('Select'),
           '#options' => $webform_consent_fields_options,
           '#ajax' => [
             'callback' => [$this, 'updateLegalConsentSource'],
             'event' => 'change',
-            'wrapper' => 'edit-settings-legal-consent-source-wrapper',
+            'wrapper' => 'edit-settings-legal-consent-source-option-wrapper',
           ],
         ],
       ],
     ];
 
+    $options_source_states = [];
+    foreach ($webform_consent_fields_options as $consent_source_option => $consent_source_option_label ) {
+      if (isset($components[$consent_source_option]) && isset($components[$consent_source_option]['#options'])) {
+        if (!empty($options_source_states)) {
+          $options_source_states[] = 'or';
+        }
+        $options_source_states[] = ['value' => $consent_source_option];
+      }
+    }
+
+    $consent_source_name = $form_values['legal_consent']['source']['element'] ?? NULL;
+    $consent_source_options = [];
     if (
-      !empty($form_values['legal_consent']['include'])
-      && !empty($form_values['legal_consent']['source']['element'])
-      && isset($components[$form_values['legal_consent']['source']['element']])
-      && isset($components[$form_values['legal_consent']['source']['element']]['#options'])
+      !empty($consent_source_name)
+      && isset($components[$consent_source_name])
+      && isset($components[$consent_source_name]['#options'])
     ) {
-      $form['legal_consent']['source']['option'] = [
-        '#type' => 'select',
-        '#title' => 'Source Value',
-        '#states' => [
-          'visible' => [
+      $consent_source_options = $components[$consent_source_name]['#options'];
+    }
+    $form['legal_consent']['source']['option'] = [
+      '#type' => 'select',
+      '#title' => 'Source Value',
+      '#prefix' => '<div id="edit-settings-legal-consent-source-option-wrapper">',
+      '#suffix' => '</div>',
+      '#parents' => [
+        'settings',
+        'legal_consent',
+        'source',
+        'option',
+      ],
+      '#options' => $consent_source_options,
+      '#default_value' => $settings['legal_consent']['source']['option'] ?? NULL,
+      '#states' => [
+        'visible' => [
+          [
             '#edit-settings-legal-consent-include' => [
               'value' => 'conditionally',
             ],
+            'and',
+            ':input[name="settings[legal_consent][source][element]"]' => $options_source_states,
+          ]
+        ],
+        'required' => [
+          [
+            '#edit-settings-legal-consent-include' => [
+              'value' => 'conditionally',
+            ],
+            'and',
+            ':input[name="settings[legal_consent][source][element]"]' => $options_source_states,
           ],
         ],
-        '#parents' => [
-          'settings',
-          'legal_consent',
-          'source',
-          'option',
-        ],
-        '#options' => $components[$form_values['legal_consent']['source']['element']]['#options'],
-      ];
+      ],
+    ];
+    $include_consent = $form_values['legal_consent']['include'] ?? '';
+    $consent_is_conditional = $include_consent == 'conditionally';
+    if (empty($consent_source_options)) {
+      $form['legal_consent']['source']['option']['#wrapper_attributes']['style'] = 'display: none;';
+    }
+    elseif ($consent_is_conditional) {
+      $form['legal_consent']['source']['option']['#required'] = TRUE;
     }
 
     $form['subscriptions'] = [
@@ -538,7 +578,7 @@ class HubspotWebformHandler extends WebformHandlerBase {
    *   Render array.
    */
   public function updateLegalConsentSource(array $form, FormStateInterface $form_state): array {
-    return $form['settings']['legal_consent']['source'];
+    return $form['settings']['legal_consent']['source']['option'];
   }
 
   /**
