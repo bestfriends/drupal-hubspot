@@ -10,6 +10,6 @@
     ],
     "require": {
         "hubspot/hubspot-php": "^5.3",
-        "psr/http-message": "^1.1"
+        "psr/http-message": "^1.1 || ^2.0"
     }
 }
