@@ -127,7 +127,7 @@ class AdminSettings extends ConfigFormBase {
 
     $form['settings']['app_settings']['hubspot_scope'] = [
       '#title' => $this->t('HubSpot Scope'),
-      '#type' => 'textfield',
+      '#type' => 'textarea',
       '#default_value' => $config
         ->get('hubspot_scope'),
       '#description' => $this->t('Enter the scopes required by your app. Click
