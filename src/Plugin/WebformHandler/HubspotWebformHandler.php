@@ -443,6 +443,7 @@ class HubspotWebformHandler extends WebformHandlerBase {
         '#title_display' => 'invisible',
         '#empty_option' => $this->t('Select'),
         '#required' => TRUE,
+        '#default_value' => $default_values['subscription'] ?? NULL,
         '#options' => $subscription_options,
         '#parents' => [
           'settings',
@@ -469,6 +470,7 @@ class HubspotWebformHandler extends WebformHandlerBase {
             'wrapper' => 'edit-settings-subscriptions-mapping-' . $index . '-mapping-wrapper',
           ],
           '#required' => TRUE,
+          '#default_value' => $default_values['mapping']['include'] ?? NULL,
           '#parents' => [
             'settings',
             'subscriptions',
@@ -511,6 +513,7 @@ class HubspotWebformHandler extends WebformHandlerBase {
           ],
         ],
         '#required' => TRUE,
+        '#default_value' => $default_values['mapping']['element'] ?? NULL,
         '#empty_option' => $this->t('Select'),
         '#options' => $webform_consent_fields_options,
         '#ajax' => [
