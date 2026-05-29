@@ -736,7 +736,7 @@ class HubspotWebformHandler extends WebformHandlerBase {
 
     // Loop through components and set new value for checkbox fields.
     foreach ($elements as $component_key => $component) {
-      if ($component['#type'] == 'checkbox') {
+      if (in_array($component['#type'], ['checkbox', 'webform_terms_of_service'])) {
         $webform_submission->setElementData($component_key, $webform_submission->getElementData($component_key) ? 'true' : 'false');
       }
     }
@@ -796,7 +796,7 @@ class HubspotWebformHandler extends WebformHandlerBase {
           in_array($elements[$settings['legal_consent']['source']['element']]['#type'], [
             'checkbox',
             'webform_terms_of_service',
-          ]) && $webform_values[$settings['legal_consent']['source']['element']] == 1)
+          ]) && $webform_values[$settings['legal_consent']['source']['element']] == 'true')
         || $webform_values[$settings['legal_consent']['source']['element']] == $settings['legal_consent']['source']['option']
       ) {
         $request_body['legalConsentOptions']['consent']['consentToProcess'] = TRUE;
@@ -804,7 +804,7 @@ class HubspotWebformHandler extends WebformHandlerBase {
       }
     }
 
-    if (isset($settings['subscriptions'])) {
+    if (isset($settings['subscriptions']) && !empty($settings['subscriptions'])) {
       foreach ($settings['subscriptions'] as $subscription) {
         if (
           $subscription['mapping']['include'] == 'always'
@@ -812,7 +812,7 @@ class HubspotWebformHandler extends WebformHandlerBase {
             in_array($elements[$subscription['mapping']['element']]['#type'], [
               'checkbox',
               'webform_terms_of_service',
-            ]) && $webform_values[$subscription['mapping']['element']] == 1)
+            ]) && $webform_values[$subscription['mapping']['element']] == 'true')
           || $webform_values[$subscription['mapping']['element']] == $subscription['mapping']['option']
         ) {
           $request_body['legalConsentOptions']['consent']['communications'][] = [
