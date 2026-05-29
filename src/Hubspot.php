@@ -158,12 +158,20 @@ class Hubspot {
    *   Hubspot authorization uri.
    */
   public function getAuthorizationUrl(): string {
+    $scope_string = $this->config->get('hubspot_scope');
+    $scopes = [];
+    if (is_string($scope_string) && $scope_string !== '') {
+      $scopes = array_values(array_filter(array_map('trim', explode(' ', $scope_string))));
+    }
+    if ($scopes === []) {
+      $scopes = static::HUBSPOT_OAUTH2_SCOPES;
+    }
     return HubspotOAuthHelper::getAuthUrl(
       $this->config->get('hubspot_client_id'),
       Url::fromRoute('hubspot.oauth_connect', [], [
         'absolute' => TRUE,
       ])->toString(),
-      static::HUBSPOT_OAUTH2_SCOPES,
+      $scopes,
     );
   }
 
