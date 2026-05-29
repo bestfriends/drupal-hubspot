@@ -778,7 +778,7 @@ class HubspotWebformHandler extends WebformHandlerBase {
 
         }
 
-        if (in_array($elements[$webform_path]['#type'], ['managed_file', 'webform_document_file'])) {
+        if (isset($elements[$webform_path]) && in_array($elements[$webform_path]['#type'], ['managed_file', 'webform_document_file'])) {
           /** @var \Drupal\file\Entity\File */
           $file = $this->entityTypeManager->getStorage('file')->load($webform_values[$webform_path]);
           if ($file) {
