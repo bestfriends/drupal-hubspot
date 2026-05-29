@@ -118,7 +118,7 @@ class AdminSettings extends ConfigFormBase {
     $form['settings']['app_settings']['hubspot_client_secret'] = [
       '#title' => $this->t('HubSpot Client Secret'),
       '#type' => 'textfield',
-      '#required' => TRUE,
+      '#required' => FALSE,
       '#default_value' => $config
         ->get('hubspot_client_secret'),
       '#description' => $this->t('Enter the HubSpot application Client Secret.
