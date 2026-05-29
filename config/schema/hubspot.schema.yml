@@ -2,10 +2,27 @@ hubspot.settings:
   type: mapping
   label: Settings
   mapping:
+    hubspot_portal_id:
+      type: string
+      label: 'HubSpot Portal ID'
+    hubspot_client_id:
+      type: string
+      label: 'HubSpot Client ID'
+    hubspot_client_secret:
+      type: string
+      label: 'HubSpot Client Secret'
+    hubspot_scope:
+      type: string
+      label: 'HubSpot Scope'
     hubspot_debug_on:
       type: integer
+      label: 'Debugging enabled'
+    hubspot_debug_email:
+      type: email
+      label: 'Debugging email'
     tracking_code_on:
       type: integer
+      label: 'Enable Tracking Code'
 
 webform.handler.hubspot_webform_handler:
   type: mapping
