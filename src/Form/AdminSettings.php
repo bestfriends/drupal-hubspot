@@ -4,10 +4,10 @@ namespace Drupal\hubspot\Form;
 
 use Drupal\Core\Form\ConfigFormBase;
 use Drupal\Core\Form\FormStateInterface;
+use Drupal\Core\Routing\TrustedRedirectResponse;
 use Drupal\Core\State\StateInterface;
 use Drupal\Core\Url;
 use Symfony\Component\DependencyInjection\ContainerInterface;
-use Symfony\Component\HttpFoundation\RedirectResponse;
 
 /**
  * Hubspot admin settings form.
@@ -211,24 +211,27 @@ class AdminSettings extends ConfigFormBase {
    * @return \Symfony\Component\HttpFoundation\RedirectResponse
    *   Ajax response.
    */
-  public function hubspotOauthSubmitForm(array &$form, FormStateInterface $form_state): RedirectResponse {
+  public function hubspotOauthSubmitForm(array &$form, FormStateInterface $form_state): void {
     $config = $this->config(static::SETTINGS);
-    $options = [
-      'query' => [
-        'client_id' => $config
-          ->get('hubspot_client_id'),
-        'redirect_uri' => Url::fromRoute('hubspot.oauth_connect', [], [
-            'absolute' => TRUE,
-          ])->toString(),
-        'scope' => $config
-          ->get('hubspot_scope'),
-      ],
-    ];
-    $redirect_url = Url::fromUri('https://app.hubspot.com/oauth/authorize', $options)->toString();
 
-    $response = new RedirectResponse($redirect_url);
-    $response->send();
-    return $response;
+    $redirectUri = Url::fromRoute('hubspot.oauth_connect', [], [
+      'absolute' => TRUE,
+    ])->toString();
+
+    $query = [
+      'client_id' => (string) $config->get('hubspot_client_id'),
+      'redirect_uri' => $redirectUri,
+      'scope' => (string) $config->get('hubspot_scope'),
+    ];
+
+    // Build the URL manually to ensure the query string is not dropped.
+    $redirect_url = 'https://app.hubspot.com/oauth/authorize?' . http_build_query($query, '', '&', PHP_QUERY_RFC3986);
+
+
+
+
+
+    $form_state->setResponse(new TrustedRedirectResponse($redirect_url));
   }
 
   /**
