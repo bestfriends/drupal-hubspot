@@ -60,7 +60,8 @@ class AdminSettings extends ConfigFormBase {
    * {@inheritdoc}
    */
   public function buildForm(array $form, FormStateInterface $form_state): array {
-    $config = $this->config(static::SETTINGS);
+    // Use immutable config so Key config overrides are reflected in defaults.
+    $config = $this->configFactory->get(static::SETTINGS);
     $form = [];
 
     $form['settings'] = [
@@ -108,21 +109,23 @@ class AdminSettings extends ConfigFormBase {
     $form['settings']['app_settings']['hubspot_client_id'] = [
       '#title' => $this->t('HubSpot Client ID'),
       '#type' => 'textfield',
-      '#required' => TRUE,
-      '#default_value' => $config
-        ->get('hubspot_client_id'),
+      // Require only if no value exists (including overrides).
+      '#required' => empty($config->get('hubspot_client_id')),
+      '#default_value' => (string) ($config->get('hubspot_client_id') ?? ''),
       '#description' => $this->t('Enter the HubSpot application Client ID.
         <a href="https://developers.hubspot.com/docs/faq/how-do-i-create-an-app-in-hubspot" target="_blank">How do I find my Client ID?</a>'),
     ];
 
     $form['settings']['app_settings']['hubspot_client_secret'] = [
       '#title' => $this->t('HubSpot Client Secret'),
-      '#type' => 'textfield',
-      '#required' => FALSE,
-      '#default_value' => $config
-        ->get('hubspot_client_secret'),
+      // Do not echo the secret back into the UI.
+      '#type' => 'password',
+      // Require only if no value exists (including overrides).
+      '#required' => empty($config->get('hubspot_client_secret')),
+      '#default_value' => '',
       '#description' => $this->t('Enter the HubSpot application Client Secret.
-      <a href="https://developers.hubspot.com/docs/faq/how-do-i-create-an-app-in-hubspot" target="_blank">How do I find my Client Secret?</a>'),
+      <a href="https://developers.hubspot.com/docs/faq/how-do-i-create-an-app-in-hubspot" target="_blank">How do I find my Client Secret?</a>
+      Leave blank to keep the existing value (including values provided by overrides).'),
     ];
 
     $form['settings']['app_settings']['hubspot_scope'] = [
@@ -187,16 +190,24 @@ class AdminSettings extends ConfigFormBase {
    * {@inheritDoc}
    */
   public function submitForm(array &$form, FormStateInterface $form_state) {
-
-    $this->configFactory->getEditable(static::SETTINGS)
+    $editable = $this->configFactory->getEditable(static::SETTINGS);
+    $editable
       ->set('hubspot_portal_id', $form_state->getValue('hubspot_portal_id'))
-      ->set('hubspot_client_id', $form_state->getValue('hubspot_client_id'))
-      ->set('hubspot_client_secret', $form_state->getValue('hubspot_client_secret'))
       ->set('hubspot_scope', $form_state->getValue('hubspot_scope'))
       ->set('hubspot_debug_email', $form_state->getValue('hubspot_debug_email'))
       ->set('hubspot_debug_on', $form_state->getValue('hubspot_debug_on'))
-      ->set('tracking_code_on', $form_state->getValue(['tracking_code_on']))
-      ->save();
+      ->set('tracking_code_on', $form_state->getValue(['tracking_code_on']));
+    // Only persist these if the admin entered values, so we don't overwrite
+    // Key-provided overrides with blanks.
+    $client_id = trim((string) $form_state->getValue('hubspot_client_id'));
+    if ($client_id !== '') {
+      $editable->set('hubspot_client_id', $client_id);
+    }
+    $client_secret = trim((string) $form_state->getValue('hubspot_client_secret'));
+    if ($client_secret !== '') {
+      $editable->set('hubspot_client_secret', $client_secret);
+    }
+    $editable->save();
     $this->messenger()->addStatus($this->t('The configuration options have been saved.'));
   }
 
@@ -212,7 +223,8 @@ class AdminSettings extends ConfigFormBase {
    *   Ajax response.
    */
   public function hubspotOauthSubmitForm(array &$form, FormStateInterface $form_state): void {
-    $config = $this->config(static::SETTINGS);
+    // Use immutable config so overrides are respected.
+    $config = $this->configFactory->get(static::SETTINGS);
 
     $redirectUri = Url::fromRoute('hubspot.oauth_connect', [], [
       'absolute' => TRUE,
