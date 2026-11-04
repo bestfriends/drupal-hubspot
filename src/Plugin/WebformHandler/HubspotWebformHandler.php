@@ -788,6 +788,16 @@ class HubspotWebformHandler extends WebformHandlerBase {
       ])->toString();
     }
 
+    // Preserve the browser's original URL before Pantheon strips UTM values.
+    $request = \Drupal::requestStack()->getCurrentRequest();
+    if ($request && $request->isMethod('POST')) {
+      $referer = $request->headers->get('referer');
+      if ($referer && filter_var($referer, FILTER_VALIDATE_URL)
+        && in_array(strtolower(parse_url($referer, PHP_URL_SCHEME) ?? ''), ['http', 'https'], TRUE)) {
+        $page_url = $referer;
+      }
+    }
+
     $context['pageUri'] = $page_url;
     $settings = $this->getSettings();
     $form_guid = $settings['form_guid'];
